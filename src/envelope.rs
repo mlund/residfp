@@ -3,7 +3,7 @@
 // Portions (c) 2004 Dag Lem <resid@nimrod.no>
 // Licensed under the GPLv3. See LICENSE file in the project root for full license text.
 
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::cast_lossless))]
+#![allow(clippy::cast_lossless)]
 
 use bit_field::BitField;
 
@@ -135,9 +135,7 @@ impl Default for EnvelopeGenerator {
 }
 
 impl EnvelopeGenerator {
-    pub fn get_attack_decay(&self) -> u8 {
-        self.attack << 4 | self.decay
-    }
+    pub fn get_attack_decay(&self) -> u8 { self.attack << 4 | self.decay }
 
     pub fn get_control(&self) -> u8 {
         let mut value = 0u8;
@@ -145,18 +143,14 @@ impl EnvelopeGenerator {
         value
     }
 
-    pub fn get_sustain_release(&self) -> u8 {
-        self.sustain << 4 | self.release
-    }
+    pub fn get_sustain_release(&self) -> u8 { self.sustain << 4 | self.release }
 
     pub fn set_attack_decay(&mut self, value: u8) {
         self.attack = (value >> 4) & 0x0f;
         self.decay = value & 0x0f;
         match self.state {
             State::Attack => self.rate_counter_period = RATE_COUNTER_PERIOD[self.attack as usize],
-            State::DecaySustain => {
-                self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize]
-            }
+            State::DecaySustain => self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize],
             _ => {}
         }
     }
@@ -203,9 +197,7 @@ impl EnvelopeGenerator {
             // The first envelope step in the attack state also resets the exponential
             // counter. This has been verified by sampling ENV3.
             self.exponential_counter += 1; // TODO check w/ ref impl
-            if self.state == State::Attack
-                || self.exponential_counter == self.exponential_counter_period
-            {
+            if self.state == State::Attack || self.exponential_counter == self.exponential_counter_period {
                 self.exponential_counter = 0;
                 // Check whether the envelope counter is frozen at zero.
                 if self.hold_zero {
@@ -233,8 +225,7 @@ impl EnvelopeGenerator {
                         // attack, then to release. The envelope counter will then continue
                         // counting down in the release state.
                         // This has been verified by sampling ENV3.
-                        // NB! The operation below requires two's complement integer.
-                        self.envelope_counter -= 1;
+                        self.envelope_counter = self.envelope_counter.wrapping_sub(1);
                     }
                 }
                 // Check for change of exponential counter period.
@@ -278,9 +269,7 @@ impl EnvelopeGenerator {
             // The first envelope step in the attack state also resets the exponential
             // counter. This has been verified by sampling ENV3.
             self.exponential_counter += 1; // TODO check w/ ref impl
-            if self.state == State::Attack
-                || self.exponential_counter == self.exponential_counter_period
-            {
+            if self.state == State::Attack || self.exponential_counter == self.exponential_counter_period {
                 self.exponential_counter = 0;
                 // Check whether the envelope counter is frozen at zero.
                 if self.hold_zero {
@@ -309,8 +298,7 @@ impl EnvelopeGenerator {
                         // attack, then to release. The envelope counter will then continue
                         // counting down in the release state.
                         // This has been verified by sampling ENV3.
-                        // NB! The operation below requires two's complement integer.
-                        self.envelope_counter -= 1;
+                        self.envelope_counter = self.envelope_counter.wrapping_sub(1);
                     }
                 }
                 // Check for change of exponential counter period.
@@ -335,13 +323,9 @@ impl EnvelopeGenerator {
     }
 
     #[inline]
-    pub fn output(&self) -> u8 {
-        self.envelope_counter
-    }
+    pub fn output(&self) -> u8 { self.envelope_counter }
 
-    pub fn read_env(&self) -> u8 {
-        self.output()
-    }
+    pub fn read_env(&self) -> u8 { self.output() }
 
     pub fn reset(&mut self) {
         self.attack = 0;
