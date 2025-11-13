@@ -1,3 +1,4 @@
+#![allow(unused)]
 #[rustfmt::skip]
 pub static RESID_WAVE1_OUTPUT: [u16; 500] = [
     15, 31, 46, 62, 78, 93, 109, 125,

@@ -1,3 +1,4 @@
+#[allow(unused)]
 #[rustfmt::skip]
 pub static RESID_OUTPUT: [i16; 4851] = [
     15417, 16016, 15991, 15956, 15921, 15886, 15852, 15817,

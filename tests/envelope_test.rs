@@ -108,6 +108,7 @@ fn clock() {
     assert_eq!(cycles, 32915);
 }
 
+#[allow(unused)]
 fn clock_delta() {
     let mut envelope = EnvelopeGenerator::default();
     envelope.set_attack_decay(0x02 << 4 | 0x00);
