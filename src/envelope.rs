@@ -209,7 +209,7 @@ impl EnvelopeGenerator {
                         // release, then to attack. The envelope counter is then frozen at
                         // zero; to unlock this situation the state must be changed to release,
                         // then to attack. This has been verified by sampling ENV3.
-                        self.envelope_counter += 1;
+                        self.envelope_counter = self.envelope_counter.wrapping_add(1);
                         if self.envelope_counter == 0xff {
                             self.state = State::DecaySustain;
                             self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize];
@@ -217,7 +217,7 @@ impl EnvelopeGenerator {
                     }
                     State::DecaySustain => {
                         if self.envelope_counter != SUSTAIN_LEVEL[self.sustain as usize] {
-                            self.envelope_counter -= 1;
+                            self.envelope_counter = self.envelope_counter.wrapping_sub(1);
                         }
                     }
                     State::Release => {
@@ -282,7 +282,7 @@ impl EnvelopeGenerator {
                         // release, then to attack. The envelope counter is then frozen at
                         // zero; to unlock this situation the state must be changed to release,
                         // then to attack. This has been verified by sampling ENV3.
-                        self.envelope_counter += 1;
+                        self.envelope_counter = self.envelope_counter.wrapping_add(1);
                         if self.envelope_counter == 0xff {
                             self.state = State::DecaySustain;
                             self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize];
@@ -290,7 +290,7 @@ impl EnvelopeGenerator {
                     }
                     State::DecaySustain => {
                         if self.envelope_counter != SUSTAIN_LEVEL[self.sustain as usize] {
-                            self.envelope_counter -= 1;
+                            self.envelope_counter = self.envelope_counter.wrapping_sub(1);
                         }
                     }
                     State::Release => {
