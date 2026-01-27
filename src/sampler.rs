@@ -18,6 +18,8 @@ use libm::F64Ext;
 use super::math;
 use super::synth::Synth;
 
+use wide::{i16x16, i32x8};
+
 // Resampling constants.
 // The error in interpolated lookup is bounded by 1.234/L^2,
 // while the error in non-interpolated lookup is bounded by
@@ -60,9 +62,9 @@ pub struct Sampler {
     fir: Fir,
     sampling_method: SamplingMethod,
     #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
-    use_sse42: bool,
-    #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
     use_avx2: bool,
+    #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
+    use_sse2: bool,
     // Runtime State
     buffer: [i16; RING_SIZE * 2],
     index: usize,
@@ -85,7 +87,7 @@ impl Sampler {
             #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
             use_avx2: alloc::is_x86_feature_detected!("avx2"),
             #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
-            use_sse42: alloc::is_x86_feature_detected!("sse4.2"),
+            use_sse2: alloc::is_x86_feature_detected!("sse2"),
             buffer: [0; RING_SIZE * 2],
             index: 0,
             offset: 0,
@@ -391,6 +393,8 @@ impl Sampler {
         }
     }
 
+    /// Dispatches to AVX2 intrinsics if available, wide_256 for SSE2, otherwise fallback.
+    /// LLVM auto-vectorizes fallback well on NEON.
     #[inline]
     pub fn compute_convolution_fir(&self, sample: &[i16], fir: &[i16]) -> i32 {
         #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
@@ -398,11 +402,62 @@ impl Sampler {
             if self.use_avx2 {
                 return unsafe { self.compute_convolution_fir_avx2(sample, fir) };
             }
-            if self.use_sse42 {
-                return unsafe { self.compute_convolution_fir_sse(sample, fir) };
+            if self.use_sse2 {
+                return self.compute_convolution_fir_wide_256(sample, fir);
             }
         }
         self.compute_convolution_fir_fallback(sample, fir)
+    }
+
+    /// LLVM auto-vectorizes this well on SSE/NEON.
+    #[inline]
+    pub fn compute_convolution_fir_fallback(&self, sample: &[i16], fir: &[i16]) -> i32 {
+        let len = sample.len().min(fir.len());
+        sample[..len]
+            .iter()
+            .zip(&fir[..len])
+            .fold(0, |sum, (&s, &f)| sum + (s as i32 * f as i32))
+    }
+
+    /// Uses wide crate for portable SIMD; emits vpmaddwd on AVX2.
+    #[inline]
+    pub fn compute_convolution_fir_wide_256(&self, sample: &[i16], fir: &[i16]) -> i32 {
+        let len = sample.len().min(fir.len());
+        let mut ss = &sample[..len];
+        let mut fs = &fir[..len];
+
+        // 4 accumulators hide instruction latency
+        let mut v1 = i32x8::ZERO;
+        let mut v2 = i32x8::ZERO;
+        let mut v3 = i32x8::ZERO;
+        let mut v4 = i32x8::ZERO;
+
+        while ss.len() >= 64 {
+            let sv1 = i16x16::from(&ss[0..16]);
+            let sv2 = i16x16::from(&ss[16..32]);
+            let sv3 = i16x16::from(&ss[32..48]);
+            let sv4 = i16x16::from(&ss[48..64]);
+            let fv1 = i16x16::from(&fs[0..16]);
+            let fv2 = i16x16::from(&fs[16..32]);
+            let fv3 = i16x16::from(&fs[32..48]);
+            let fv4 = i16x16::from(&fs[48..64]);
+
+            v1 += sv1.dot(fv1);
+            v2 += sv2.dot(fv2);
+            v3 += sv3.dot(fv3);
+            v4 += sv4.dot(fv4);
+
+            ss = &ss[64..];
+            fs = &fs[64..];
+        }
+
+        let combined = v1 + v2 + v3 + v4;
+        let mut v = combined.reduce_add();
+
+        for i in 0..ss.len() {
+            v += ss[i] as i32 * fs[i] as i32;
+        }
+        v
     }
 
     #[target_feature(enable = "avx2")]
@@ -417,6 +472,7 @@ impl Sampler {
         let len = alloc::cmp::min(sample.len(), fir.len());
         let mut fs = &fir[..len];
         let mut ss = &sample[..len];
+        // 4 accumulators hide instruction latency
         let mut v1 = _mm256_set1_epi32(0);
         let mut v2 = _mm256_set1_epi32(0);
         let mut v3 = _mm256_set1_epi32(0);
@@ -451,68 +507,6 @@ impl Sampler {
             v += ss[i] as i32 * fs[i] as i32;
         }
         v
-    }
-
-    #[target_feature(enable = "sse4.2")]
-    #[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
-    pub unsafe fn compute_convolution_fir_sse(&self, sample: &[i16], fir: &[i16]) -> i32 {
-        #[cfg(target_arch = "x86")]
-        use alloc::arch::x86::*;
-        #[cfg(target_arch = "x86_64")]
-        use alloc::arch::x86_64::*;
-
-        // Convolution with filter impulse response.
-        let len = alloc::cmp::min(sample.len(), fir.len());
-        let mut fs = &fir[..len];
-        let mut ss = &sample[..len];
-        let mut v1 = _mm_set1_epi32(0);
-        let mut v2 = _mm_set1_epi32(0);
-        let mut v3 = _mm_set1_epi32(0);
-        let mut v4 = _mm_set1_epi32(0);
-        while fs.len() >= 32 {
-            let sv1 = _mm_loadu_si128(ss.as_ptr() as *const _);
-            let sv2 = _mm_loadu_si128((&ss[8..]).as_ptr() as *const _);
-            let sv3 = _mm_loadu_si128((&ss[16..]).as_ptr() as *const _);
-            let sv4 = _mm_loadu_si128((&ss[24..]).as_ptr() as *const _);
-            let fv1 = _mm_loadu_si128(fs.as_ptr() as *const _);
-            let fv2 = _mm_loadu_si128((&fs[8..]).as_ptr() as *const _);
-            let fv3 = _mm_loadu_si128((&fs[16..]).as_ptr() as *const _);
-            let fv4 = _mm_loadu_si128((&fs[24..]).as_ptr() as *const _);
-            let prod1 = _mm_madd_epi16(sv1, fv1);
-            let prod2 = _mm_madd_epi16(sv2, fv2);
-            let prod3 = _mm_madd_epi16(sv3, fv3);
-            let prod4 = _mm_madd_epi16(sv4, fv4);
-            v1 = _mm_add_epi32(v1, prod1);
-            v2 = _mm_add_epi32(v2, prod2);
-            v3 = _mm_add_epi32(v3, prod3);
-            v4 = _mm_add_epi32(v4, prod4);
-            fs = &fs[32..];
-            ss = &ss[32..];
-        }
-        v1 = _mm_add_epi32(v1, v2);
-        v3 = _mm_add_epi32(v3, v4);
-        v1 = _mm_add_epi32(v1, v3);
-        let mut va = [0i32; 4];
-        _mm_storeu_si128(va[..].as_mut_ptr() as *mut _, v1);
-        let mut v = va[0] + va[1] + va[2] + va[3];
-        for i in 0..fs.len() {
-            v += ss[i] as i32 * fs[i] as i32;
-        }
-        v
-    }
-
-    #[inline]
-    pub fn compute_convolution_fir_fallback(&self, sample: &[i16], fir: &[i16]) -> i32 {
-        if sample.len() < fir.len() {
-            sample
-                .iter()
-                .zip(fir.iter())
-                .fold(0, |sum, (&s, &f)| sum + (s as i32 * f as i32))
-        } else {
-            fir.iter()
-                .zip(sample.iter())
-                .fold(0, |sum, (&f, &s)| sum + (f as i32 * s as i32))
-        }
     }
 
     #[inline]
