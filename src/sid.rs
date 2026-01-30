@@ -88,6 +88,11 @@ impl Sid {
         sample_freq: u32,
     ) {
         self.sampler.set_parameters(method, clock_freq, sample_freq);
+        // Update external filter coefficients for the new clock frequency
+        self.sampler
+            .synth
+            .ext_filter
+            .set_clock_frequency(clock_freq as f64);
     }
 
     pub fn clock(&mut self) {
