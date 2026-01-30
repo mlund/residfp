@@ -2,7 +2,7 @@
 //
 // Verify spline interpolation for filter frequency curves.
 
-use resid::spline::{interpolate, Point, PointPlotter};
+use residfp::spline::{interpolate, Point, PointPlotter};
 
 /// Hardware-measured opamp voltage response for 6581 filter.
 const OPAMP_VOLTAGE: [(f64, f64); 33] = [

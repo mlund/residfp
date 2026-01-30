@@ -2,7 +2,7 @@
 //
 // Verify hardware quirks in the SID's ADSR envelope generator.
 
-use resid::envelope::EnvelopeGenerator;
+use residfp::envelope::EnvelopeGenerator;
 
 /// Creates a fresh envelope generator with counter at 0.
 fn new_envelope() -> EnvelopeGenerator {

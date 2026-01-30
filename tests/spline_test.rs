@@ -1,6 +1,6 @@
 mod data;
 
-use resid::spline;
+use residfp::spline;
 
 static FO_POINTS_6581: [(i32, i32); 31] = [
     //  FC      f         FCHI FCLO

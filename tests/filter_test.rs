@@ -1,4 +1,4 @@
-use resid::{ChipModel, Sid};
+use residfp::{ChipModel, Sid};
 
 const CPU_FREQ: u32 = 985248;
 const SAMPLE_FREQ: u32 = 44100;

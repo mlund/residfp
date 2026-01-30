@@ -2,7 +2,7 @@
 //
 // Verify soft clipping behavior for 16-bit saturation.
 
-use resid::sampler::soft_clip;
+use residfp::sampler::soft_clip;
 
 /// Soft clipping threshold - values below pass unchanged.
 const THRESHOLD: i32 = 28000;

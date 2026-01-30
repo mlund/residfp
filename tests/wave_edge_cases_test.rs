@@ -2,8 +2,8 @@
 //
 // Verify LFSR behavior and noise waveform generation quirks.
 
-use resid::wave::WaveformGenerator;
-use resid::ChipModel;
+use residfp::wave::WaveformGenerator;
+use residfp::ChipModel;
 
 fn new_wave() -> WaveformGenerator {
     let mut gen = WaveformGenerator::new(ChipModel::Mos6581);

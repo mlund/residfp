@@ -1,11 +1,11 @@
-# resid-rs
+# residfp
 
 [![Build Status](https://travis-ci.org/binaryfields/resid-rs.svg?branch=master)](https://travis-ci.org/binaryfields/resid-rs)
-[![Crates.io](https://img.shields.io/crates/v/resid-rs.svg?maxAge=2592000)](https://crates.io/crates/resid-rs)
+[![Crates.io](https://img.shields.io/crates/v/residfp.svg?maxAge=2592000)](https://crates.io/crates/residfp)
 
 ### Overview
 
-Port of reSID, a MOS6581 SID emulator engine, to Rust.
+Rust port of libresidfp, a MOS6581/8580 SID emulator engine with accurate analog circuit modeling.
 
 ### Story
 
@@ -15,11 +15,11 @@ so it is packaged and shipped as a standalone crate.
 
 ### Usage
 
-Once SID register read/writes are wired up to resid, all that is left to do
+Once SID register read/writes are wired up to residfp, all that is left to do
 is to generate audio samples and push them to audio output buffer.
 
     while delta > 0 {
-        let (samples, next_delta) = self.resid.sample(delta, &mut buffer[..], 1);
+        let (samples, next_delta) = self.sid.sample(delta, &mut buffer[..], 1);
         let mut output = self.sound_buffer.lock().unwrap();
         for i in 0..samples {
             output.write(buffer[i]);
@@ -54,6 +54,7 @@ is to generate audio samples and push them to audio output buffer.
 ## Credits
 
 - Thanks to Dag Lem for his reSID implementation
+- Thanks to the libresidfp team for the floating-point filter models
 - Thanks to Daniel Collin for motivating me to put this out and helping out with code optimization
 - Commodore folks for building an iconic 8-bit machine
 - Rust developers for providing an incredible language to develop in

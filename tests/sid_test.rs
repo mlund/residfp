@@ -1,6 +1,6 @@
 mod data;
 
-use resid::{ChipModel, Sid};
+use residfp::{ChipModel, Sid};
 
 #[rustfmt::skip]
 static SID_DATA: [u16; 51] = [

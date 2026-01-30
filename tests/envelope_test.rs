@@ -1,4 +1,4 @@
-use resid::envelope::EnvelopeGenerator;
+use residfp::envelope::EnvelopeGenerator;
 
 static RESID_OUTPUT: &'static [u8] = include_bytes!("data/envelope_output.dat");
 

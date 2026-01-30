@@ -1,5 +1,5 @@
 use criterion::Criterion;
-use resid::{ChipModel, Sid};
+use residfp::{ChipModel, Sid};
 
 pub fn bench_sid(c: &mut Criterion) {
     c.bench_function("clock_delta", |b| {

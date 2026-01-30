@@ -1,17 +1,17 @@
 [package]
-name = "resid-rs"
+name = "residfp"
 version = "1.1.1"
 edition = "2018"
 authors = ["Sebastian Jastrzebski <sebby2k@gmail.com>"]
-description = "Port of reSID, a MOS6581 SID emulator engine, to Rust"
+description = "Port of libresidfp, a MOS6581/8580 SID emulator engine, to Rust"
 license = "GPL-3.0+"
 repository = "https://github.com/binaryfields/resid-rs"
 readme = "README.md"
-keywords = ["c64", "commodore", "emulator", "resid", "sid"]
+keywords = ["c64", "commodore", "emulator", "resid", "residfp", "sid"]
 categories = ["emulators"]
 
 [lib]
-name = "resid"
+name = "residfp"
 
 [features]
 default = ["std"]
