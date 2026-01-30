@@ -39,7 +39,11 @@ fn adsr_delay_bug() {
     clock_n(&mut gen, 200);
 
     // Still stuck at 0 due to wraparound requirement
-    assert_eq!(gen.read_env(), 0, "ADSR delay bug: counter must wrap 0x8000");
+    assert_eq!(
+        gen.read_env(),
+        0,
+        "ADSR delay bug: counter must wrap 0x8000"
+    );
 }
 
 /// Counter wraps 0xff->0x00 via release->attack transition, then freezes.
@@ -63,7 +67,11 @@ fn flip_ff_to_00() {
     clock_n(&mut gen, 315);
 
     // Counter wrapped and froze at 0
-    assert_eq!(gen.read_env(), 0, "Counter should wrap 0xff->0x00 and freeze");
+    assert_eq!(
+        gen.read_env(),
+        0,
+        "Counter should wrap 0xff->0x00 and freeze"
+    );
 }
 
 /// Counter wraps 0x00->0xff via attack->release transition.
@@ -106,13 +114,15 @@ macro_rules! test_attack_rate {
             assert!(
                 cycles <= $period + 10,
                 "Attack {} period: expected ~{}, got {}",
-                $attack, $period, cycles
+                $attack,
+                $period,
+                cycles
             );
         }
     };
 }
 
 // Rate counter periods from SID Programmer's Reference Guide
-test_attack_rate!(attack_rate_0, 0, 9);   // 2ms
-test_attack_rate!(attack_rate_1, 1, 32);  // 8ms
-test_attack_rate!(attack_rate_2, 2, 63);  // 16ms
+test_attack_rate!(attack_rate_0, 0, 9); // 2ms
+test_attack_rate!(attack_rate_1, 1, 32); // 8ms
+test_attack_rate!(attack_rate_2, 2, 63); // 16ms

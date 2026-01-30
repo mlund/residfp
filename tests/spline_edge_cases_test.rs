@@ -6,7 +6,7 @@ use resid::spline::{interpolate, Point, PointPlotter};
 
 /// Hardware-measured opamp voltage response for 6581 filter.
 const OPAMP_VOLTAGE: [(f64, f64); 33] = [
-    (0.81, 10.31),  // Approximate start of actual range
+    (0.81, 10.31), // Approximate start of actual range
     (2.40, 10.31),
     (2.60, 10.30),
     (2.70, 10.29),
@@ -20,10 +20,10 @@ const OPAMP_VOLTAGE: [(f64, f64); 33] = [
     (3.70, 8.00),
     (4.00, 6.89),
     (4.40, 5.21),
-    (4.54, 4.54),   // Working point (vi = vo)
+    (4.54, 4.54), // Working point (vi = vo)
     (4.60, 4.19),
     (4.80, 3.00),
-    (4.90, 2.30),   // Change of curvature
+    (4.90, 2.30), // Change of curvature
     (4.95, 2.03),
     (5.00, 1.88),
     (5.05, 1.77),
@@ -38,18 +38,14 @@ const OPAMP_VOLTAGE: [(f64, f64); 33] = [
     (7.50, 0.97),
     (8.50, 0.89),
     (10.00, 0.81),
-    (10.31, 0.81),  // Approximate end of actual range
+    (10.31, 0.81), // Approximate end of actual range
 ];
-
 
 /// Opamp curve must be monotonically decreasing (inverting amplifier behavior).
 /// Non-monotonic splines would cause filter instability.
 #[test]
 fn monotonicity() {
-    let points: Vec<Point> = OPAMP_VOLTAGE
-        .iter()
-        .map(|&(x, y)| Point { x, y })
-        .collect();
+    let points: Vec<Point> = OPAMP_VOLTAGE.iter().map(|&(x, y)| Point { x, y }).collect();
 
     // Evaluate spline at fine resolution
     let step = 0.01;
@@ -89,13 +85,13 @@ fn control_points() {
     // Use integer x coordinates for this test (like the F0 curve)
     static TEST_POINTS: [(i32, i32); 9] = [
         (0, 100),
-        (0, 100),     // repeated start
+        (0, 100), // repeated start
         (10, 200),
         (20, 350),
         (30, 500),
         (40, 600),
         (50, 650),
-        (50, 650),    // repeated end
+        (50, 650), // repeated end
         (50, 650),
     ];
 

@@ -1,7 +1,7 @@
 use criterion::Criterion;
-use resid::ChipModel;
 use resid::sampler::Sampler;
 use resid::synth::Synth;
+use resid::ChipModel;
 
 pub fn bench_compute_convolution_fir(c: &mut Criterion) {
     c.bench_function("convolution_fir", |b| {

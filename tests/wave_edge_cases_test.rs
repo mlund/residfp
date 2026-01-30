@@ -111,7 +111,11 @@ fn shift_register_clock_on_bit19() {
     gen.set_frequency_lo(0x20);
     gen.clock(); // 0x7fff0 + 0x20 = 0x80010 (bit 19 set)
 
-    assert_ne!(gen.get_shift(), initial, "LFSR should clock on bit 19 transition");
+    assert_ne!(
+        gen.get_shift(),
+        initial,
+        "LFSR should clock on bit 19 transition"
+    );
 }
 
 /// Sync bit enables hard sync from another oscillator.
