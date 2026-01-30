@@ -141,23 +141,39 @@ pub struct FilterModelConfig {
 impl FilterModelConfig {
     /// Initialize the global singleton with the given filter curve.
     ///
-    /// Must be called once before using `global()`. Panics if called twice.
+    /// Returns `true` on success, `false` if already initialized.
     ///
     /// # Arguments
     /// * `curve` - Filter curve from 0.0 (dark) to 1.0 (bright)
     #[cfg(feature = "std")]
+    pub fn try_init(curve: f64) -> bool {
+        CONFIG.set(Self::with_curve(curve)).is_ok()
+    }
+
+    /// Initialize the global singleton with the given filter curve.
+    ///
+    /// # Panics
+    /// Panics if already initialized. Prefer `try_init()` for fallible initialization.
+    #[cfg(feature = "std")]
     pub fn init(curve: f64) {
-        if CONFIG.set(Self::with_curve(curve)).is_err() {
+        if !Self::try_init(curve) {
             panic!("FilterModelConfig::init() already called");
         }
     }
 
-    /// Returns the global singleton. Panics if `init()` not called.
+    /// Returns the global singleton if initialized.
+    #[cfg(feature = "std")]
+    pub fn try_global() -> Option<&'static FilterModelConfig> {
+        CONFIG.get()
+    }
+
+    /// Returns the global singleton.
+    ///
+    /// # Panics
+    /// Panics if `init()` was not called. Prefer `try_global()` for fallible access.
     #[cfg(feature = "std")]
     pub fn global() -> &'static FilterModelConfig {
-        CONFIG
-            .get()
-            .expect("FilterModelConfig::init() must be called first")
+        Self::try_global().expect("FilterModelConfig::init() must be called first")
     }
 
     /// Creates config with default curve (0.5).

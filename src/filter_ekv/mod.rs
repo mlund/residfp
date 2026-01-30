@@ -35,10 +35,10 @@ pub struct Filter6581Ekv {
     config: Box<FilterModelConfig>,
 
     /// Highpass integrator stage.
-    hp_integrator: Integrator6581<'static>,
+    hp_integrator: Integrator6581,
 
     /// Bandpass integrator stage.
-    bp_integrator: Integrator6581<'static>,
+    bp_integrator: Integrator6581,
 
     /// Highpass output voltage.
     vhp: i32,
@@ -67,9 +67,9 @@ pub struct Filter6581Ekv {
     mixer_dc: i32,
 }
 
-// Manual implementation because Integrator6581 borrows from config
 impl Clone for Filter6581Ekv {
     fn clone(&self) -> Self {
+        // Create a fresh filter - config is regenerated
         Self::new()
     }
 }
@@ -77,18 +77,9 @@ impl Clone for Filter6581Ekv {
 impl Filter6581Ekv {
     /// Creates a new EKV filter with default configuration.
     pub fn new() -> Self {
-        // Create config in a Box so it has a stable address
         let config = Box::new(FilterModelConfig::new());
-
-        // SAFETY: We're creating a self-referential struct. The config lives
-        // in a Box which won't move, and the integrators borrow from it.
-        // The 'static lifetime is a lie, but we maintain the invariant that
-        // config outlives the integrators.
-        let config_ref: &'static FilterModelConfig =
-            unsafe { &*(config.as_ref() as *const FilterModelConfig) };
-
-        let hp_integrator = Integrator6581::new(config_ref);
-        let bp_integrator = Integrator6581::new(config_ref);
+        let hp_integrator = Integrator6581::new(&config);
+        let bp_integrator = Integrator6581::new(&config);
 
         let mut filter = Filter6581Ekv {
             config,
@@ -338,10 +329,10 @@ impl Filter6581Ekv {
     #[inline]
     fn solve_integrators(&mut self, vi: i32) {
         // Solve HP integrator: input is Vhp, output is Vbp
-        self.vbp = self.hp_integrator.solve(self.vhp);
+        self.vbp = self.hp_integrator.solve(&self.config, self.vhp);
 
         // Solve BP integrator: input is Vbp, output is Vlp
-        self.vlp = self.bp_integrator.solve(self.vbp);
+        self.vlp = self.bp_integrator.solve(&self.config, self.vbp);
 
         // Summer: compute new Vhp
         // Vhp = Vbp/Q - Vlp - Vi

@@ -265,7 +265,7 @@ impl Sid {
                 0 => EnvState::Attack,
                 1 => EnvState::DecaySustain,
                 2 => EnvState::Release,
-                _ => panic!("invalid envelope state"),
+                _ => EnvState::Release, // Default to Release for invalid states
             };
             envelope.envelope_counter = state.envelope_counter[i];
             envelope.exponential_counter = state.exponential_counter[i];
