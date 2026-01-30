@@ -183,6 +183,116 @@ test_waveform!(waveform_sawtooth, 2, |o| o > 0 && o <= 0x0fff);
 test_waveform!(waveform_pulse, 4, |o| o == 0 || o == 0x0fff);
 test_waveform!(waveform_noise, 8, |_| true); // any value valid
 
+// --- Floating DAC Output Tests ---
+
+/// When waveform is set to 0, the last output value is held (floating DAC).
+#[test]
+fn floating_dac_holds_last_value() {
+    let mut gen = new_wave();
+    gen.set_frequency_hi(0x10);
+    gen.set_control(0x20); // sawtooth
+    clock_n(&mut gen, 1000);
+
+    let last_output = gen.output(None);
+    assert!(last_output > 0, "Should have non-zero output from sawtooth");
+
+    // Switch to no waveform
+    gen.set_control(0x00);
+    gen.clock();
+
+    // Output should still be the cached value
+    assert_eq!(
+        gen.output(None),
+        last_output,
+        "Floating DAC should hold last value"
+    );
+}
+
+/// Floating DAC output eventually fades to zero after TTL expires.
+/// 6581 TTL is ~54000 cycles, then fades every ~1400 cycles.
+#[test]
+fn floating_dac_fades_to_zero() {
+    let mut gen = new_wave();
+    gen.set_frequency_hi(0x10);
+    gen.set_control(0x20); // sawtooth
+    clock_n(&mut gen, 1000);
+
+    let last_output = gen.output(None);
+    assert!(last_output > 0);
+
+    // Switch to no waveform
+    gen.set_control(0x00);
+
+    // After enough cycles, output should fade to zero
+    // 6581: 54000 initial + 12 fade steps * 1400 = ~70800 cycles max
+    clock_n(&mut gen, 80000);
+
+    assert_eq!(gen.output(None), 0, "Floating DAC should fade to zero");
+}
+
+/// Floating DAC fade uses bit-shifting pattern (output &= output >> 1).
+#[test]
+fn floating_dac_fade_pattern() {
+    let mut gen = new_wave();
+
+    // Set up a known output value with multiple bits set
+    gen.set_frequency_hi(0x08);
+    gen.set_pulse_width_hi(0x00);
+    gen.set_pulse_width_lo(0x01);
+    gen.set_control(0x40); // pulse
+    clock_n(&mut gen, 100);
+
+    // Get output - should be 0xfff (pulse high)
+    let initial = gen.output(None);
+    assert_eq!(initial, 0x0fff, "Pulse should be high");
+
+    // Switch to no waveform and wait for first fade
+    gen.set_control(0x00);
+    clock_n(&mut gen, 54001); // Just past initial TTL
+
+    let after_fade = gen.output(None);
+    // 0x0fff & (0x0fff >> 1) = 0x0fff & 0x07ff = 0x07ff
+    assert_eq!(after_fade, 0x07ff, "First fade: 0x0fff & 0x07ff = 0x07ff");
+}
+
+/// 8580 has longer TTL (~800000 cycles) than 6581 (~54000 cycles).
+#[test]
+fn floating_dac_8580_longer_ttl() {
+    let mut gen_6581 = WaveformGenerator::new(ChipModel::Mos6581);
+    let mut gen_8580 = WaveformGenerator::new(ChipModel::Mos8580);
+
+    // Set up both with same waveform
+    for gen in [&mut gen_6581, &mut gen_8580] {
+        gen.set_frequency_hi(0x10);
+        gen.set_control(0x20); // sawtooth
+    }
+    clock_n(&mut gen_6581, 1000);
+    clock_n(&mut gen_8580, 1000);
+
+    let out_6581 = gen_6581.output(None);
+    let out_8580 = gen_8580.output(None);
+
+    // Switch both to no waveform
+    gen_6581.set_control(0x00);
+    gen_8580.set_control(0x00);
+
+    // After 60000 cycles: 6581 should have started fading, 8580 should not
+    clock_n(&mut gen_6581, 60000);
+    clock_n(&mut gen_8580, 60000);
+
+    assert!(
+        gen_6581.output(None) < out_6581,
+        "6581 should have faded after 60k cycles"
+    );
+    assert_eq!(
+        gen_8580.output(None),
+        out_8580,
+        "8580 should still hold value after 60k cycles"
+    );
+}
+
+// --- Noise Write-back Tests ---
+
 /// Noise write-back: switching between noise and combined waveforms modifies LFSR.
 ///
 /// From libresidfp TestNoiseWriteBack1:

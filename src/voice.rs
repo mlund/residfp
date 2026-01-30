@@ -35,7 +35,7 @@ const WAVE_ZERO: i32 = 0x0380;
 /// this follows from the DC level in the waveform output.
 const VOICE_DC: i32 = 0x800 * 0xff;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Voice {
     // Configuration
     wave_zero: i32,

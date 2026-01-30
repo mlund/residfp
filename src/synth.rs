@@ -54,7 +54,7 @@ impl Synth {
         Synth {
             ext_filter: ExternalFilter::new(chip_model),
             filter: Filter::new(chip_model),
-            voices: [Voice::new(chip_model); 3],
+            voices: core::array::from_fn(|_| Voice::new(chip_model)),
             ext_in: 0,
             dac: DacTables {
                 wav: build_dac_table(12, chip_model).into_boxed_slice(),

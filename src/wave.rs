@@ -5,6 +5,8 @@
 
 #![allow(clippy::cast_lossless)]
 
+use core::cell::Cell;
+
 use bit_field::BitField;
 
 use super::data;
@@ -16,15 +18,27 @@ const ACC_MSB_MASK: u32 = 0x0080_0000;
 const SHIFT_MASK: u32 = 0x007f_ffff;
 const OUTPUT_MASK: u16 = 0x0fff;
 
+// Floating DAC output TTL constants.
+// When no waveform is selected, the DAC input floats and the last output
+// value is held by parasitic capacitance, then slowly fades to zero.
+// Values measured on warm chips (6581R3/R4 and 8580R5) via OSC3.
+// Times vary with temperature and chip, these represent typical behavior.
+// See VICE Bug #290 and #1128.
+const FLOATING_OUTPUT_TTL_6581: u32 = 54000; // ~95ms initial hold
+const FLOATING_OUTPUT_FADE_6581: u32 = 1400; // interval between fade steps
+const FLOATING_OUTPUT_TTL_8580: u32 = 800000; // ~1s initial hold
+const FLOATING_OUTPUT_FADE_8580: u32 = 50000; // interval between fade steps
+
 /// A 24 bit accumulator is the basis for waveform generation. FREQ is added to
 /// the lower 16 bits of the accumulator each cycle.
 /// The accumulator is set to zero when TEST is set, and starts counting
 /// when TEST is cleared.
 /// The noise waveform is taken from intermediate bits of a 23 bit shift
 /// register. This register is clocked by bit 19 of the accumulator.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct WaveformGenerator {
     // Configuration
+    chip_model: ChipModel,
     frequency: u16,
     pulse_width: u16,
     // Control
@@ -42,6 +56,11 @@ pub struct WaveformGenerator {
     /// Latched test bit for noise XOR in shift phase 2
     test_or_reset: bool,
     msb_rising: bool,
+    /// Cached waveform output for floating DAC behavior.
+    /// Uses Cell for interior mutability since output() caches through &self.
+    waveform_output: Cell<u16>,
+    /// Time-to-live counter for floating DAC output fade
+    floating_output_ttl: u32,
     // Static Data
     wave_ps: &'static [u8; 4096],
     wave_pst: &'static [u8; 4096],
@@ -72,6 +91,7 @@ impl WaveformGenerator {
             ),
         };
         let mut waveform = WaveformGenerator {
+            chip_model,
             frequency: 0,
             pulse_width: 0,
             waveform: 0,
@@ -84,6 +104,8 @@ impl WaveformGenerator {
             shift_pipeline: 0,
             test_or_reset: false,
             msb_rising: false,
+            waveform_output: Cell::new(0),
+            floating_output_ttl: 0,
             wave_ps,
             wave_pst,
             wave_pt,
@@ -142,11 +164,22 @@ impl WaveformGenerator {
     }
 
     pub fn set_control(&mut self, value: u8) {
+        let waveform_prev = self.waveform;
         self.waveform = (value >> 4) & 0x0f;
         self.sync = value.get_bit(1);
         self.ring = value.get_bit(2);
         let test = value.get_bit(3);
         let test_prev = self.test;
+
+        // Track waveform changes for floating DAC behavior
+        if self.waveform != waveform_prev && self.waveform == 0 {
+            // Switching to no waveform: start floating DAC countdown
+            self.floating_output_ttl = match self.chip_model {
+                ChipModel::Mos6581 => FLOATING_OUTPUT_TTL_6581,
+                ChipModel::Mos8580 => FLOATING_OUTPUT_TTL_8580,
+            };
+        }
+
         if test != test_prev {
             if test {
                 // Test bit set.
@@ -227,6 +260,30 @@ impl WaveformGenerator {
                 }
             }
         }
+
+        // Age floating DAC output when no waveform is selected
+        if self.waveform == 0 && self.floating_output_ttl > 0 {
+            self.floating_output_ttl -= 1;
+            if self.floating_output_ttl == 0 {
+                self.wave_bitfade();
+            }
+        }
+    }
+
+    /// Fade the floating DAC output by shifting bits toward zero.
+    /// Each call fades one bit position, modeling capacitor discharge.
+    #[inline]
+    fn wave_bitfade(&mut self) {
+        let output = self.waveform_output.get();
+        let faded = output & (output >> 1);
+        self.waveform_output.set(faded);
+        if faded != 0 {
+            // Schedule next fade step
+            self.floating_output_ttl = match self.chip_model {
+                ChipModel::Mos6581 => FLOATING_OUTPUT_FADE_6581,
+                ChipModel::Mos8580 => FLOATING_OUTPUT_FADE_8580,
+            };
+        }
     }
 
     /// Perform the actual LFSR shift using the latched value.
@@ -279,28 +336,30 @@ impl WaveformGenerator {
         }
     }
 
-    /// 12-bit waveform output
+    /// 12-bit waveform output.
+    /// When a waveform is selected, the output is computed and cached.
+    /// When no waveform is selected (0), returns the cached floating DAC output
+    /// which slowly fades to zero over time.
     #[inline]
     pub fn output(&self, sync_source: Option<&WaveformGenerator>) -> u16 {
-        match self.waveform {
-            0x0 => 0,
-            0x1 => self.output_t(sync_source),
-            0x2 => self.output_s(),
-            0x3 => self.output_st(),
-            0x4 => self.output_p(),
-            0x5 => self.output_pt(sync_source),
-            0x6 => self.output_ps(),
-            0x7 => self.output_pst(),
-            0x8 => self.output_n(),
-            0x9 => 0,
-            0xa => 0,
-            0xb => 0,
-            0xc => 0,
-            0xd => 0,
-            0xe => 0,
-            0xf => 0,
-            _ => panic!("invalid waveform {}", self.waveform),
+        if self.waveform != 0 {
+            // Compute and cache output for active waveform
+            let out = match self.waveform {
+                0x1 => self.output_t(sync_source),
+                0x2 => self.output_s(),
+                0x3 => self.output_st(),
+                0x4 => self.output_p(),
+                0x5 => self.output_pt(sync_source),
+                0x6 => self.output_ps(),
+                0x7 => self.output_pst(),
+                0x8 => self.output_n(),
+                // Combined noise waveforms not implemented
+                _ => 0,
+            };
+            self.waveform_output.set(out);
         }
+        // Return cached output (active waveform or fading floating DAC)
+        self.waveform_output.get()
     }
 
     pub fn reset(&mut self) {
@@ -316,6 +375,8 @@ impl WaveformGenerator {
         self.shift_pipeline = 0;
         self.test_or_reset = false;
         self.msb_rising = false;
+        self.waveform_output.set(0);
+        self.floating_output_ttl = 0;
     }
 
     // -- Output Functions
