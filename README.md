@@ -7,6 +7,18 @@
 
 Rust port of libresidfp, a MOS6581/8580 SID emulator engine with accurate analog circuit modeling.
 
+### Features (from libresidfp)
+
+- **DAC nonlinearity model** - R-2R ladder with resistor mismatch and missing termination for 6581
+- **EKV filter model** - Physics-based MOS transistor model for accurate 6581 filter (feature: `ekv-filter`)
+- **Filter curve adjustment** - 0..1 parameter for tuning to match specific SID chips
+- **Soft clipping** - Tanh approximation for 16-bit saturation
+- **Floating DAC output** - Tracks DAC fade when no waveform selected
+- **Noise LFSR pipeline** - Accurate 2-cycle delay modeling
+- **LFSR delay bug** - Rate counter wrap-around behavior
+- **External filter** - Frequency-dependent coefficients
+- **SIMD resampler** - SSE2/AVX2 runtime dispatch
+
 ### Story
 
 This project originated from zinc64, a Commodore 64 emulator, around Jan 2017.
