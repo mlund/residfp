@@ -8,8 +8,30 @@
 //! Contains lookup tables and physical constants for the physics-based MOS
 //! transistor model. Tables are generated at runtime from measured op-amp
 //! voltage data.
+//!
+//! # Singleton Usage
+//!
+//! Table generation takes ~300ms. Use the singleton to initialize once:
+//!
+//! ```ignore
+//! // At startup (once):
+//! FilterModelConfig::init(0.5);  // curve: 0.0 (dark) to 1.0 (bright)
+//!
+//! // Later (fast):
+//! let config = FilterModelConfig::global();
+//! ```
 
 use alloc::boxed::Box;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(feature = "std")]
+use std::sync::OnceLock;
+
+/// Global singleton for FilterModelConfig (std feature only).
+#[cfg(feature = "std")]
+static CONFIG: OnceLock<FilterModelConfig> = OnceLock::new();
 
 use super::opamp::{MonotoneSpline, Point};
 use crate::dac::build_dac_table;
@@ -117,19 +139,55 @@ pub struct FilterModelConfig {
 }
 
 impl FilterModelConfig {
-    /// Creates a new FilterModelConfig with all lookup tables generated.
+    /// Initialize the global singleton with the given filter curve.
+    ///
+    /// Must be called once before using `global()`. Panics if called twice.
+    ///
+    /// # Arguments
+    /// * `curve` - Filter curve from 0.0 (dark) to 1.0 (bright)
+    #[cfg(feature = "std")]
+    pub fn init(curve: f64) {
+        if CONFIG.set(Self::with_curve(curve)).is_err() {
+            panic!("FilterModelConfig::init() already called");
+        }
+    }
+
+    /// Returns the global singleton. Panics if `init()` not called.
+    #[cfg(feature = "std")]
+    pub fn global() -> &'static FilterModelConfig {
+        CONFIG
+            .get()
+            .expect("FilterModelConfig::init() must be called first")
+    }
+
+    /// Creates config with default curve (0.5).
     pub fn new() -> Self {
+        Self::with_curve(0.5)
+    }
+
+    /// Creates config with specified filter curve.
+    ///
+    /// # Arguments
+    /// * `curve` - 0.0 (bright/high freq) to 1.0 (dark/low freq). Affects DAC zero.
+    ///
+    /// Note: uCox defaults to 20e-6. Use `set_filter_range()` to adjust it.
+    pub fn with_curve(curve: f64) -> Self {
+        let curve = curve.clamp(0.0, 1.0);
+
         // Physical parameters for 6581
         let vdd = 12.0 * VOLTAGE_SKEW;
         let vth = 1.31;
         let vddt = vdd - vth;
         let c = 470e-12; // Capacitor value (F)
-        let u_cox = 20e-6; // Transconductance coefficient (A/V^2)
         let wl_vcr = 9.0; // W/L for VCR
         let wl_snake = 1.0 / 115.0;
 
-        // DAC parameters
-        let dac_zero = 6.65;
+        // Default uCox = 20e-6 (matches C++ libresidfp default)
+        // Can be adjusted 1e-6..40e-6 via set_filter_range()
+        let u_cox = 20e-6;
+
+        // DAC parameters - dac_zero varies with curve (C++ formula)
+        let dac_zero = 6.65 + (1.0 - curve);
         let dac_scale = 2.63;
 
         // Voltage range from op-amp data
@@ -414,5 +472,100 @@ mod tests {
 
         config.set_filter_range(0.0);
         assert!(config.curr_factor_coeff < initial_coeff);
+    }
+
+    // =========================================================================
+    // C++ libresidfp comparison tests
+    // Reference values from FilterModelConfig6581 with curve=0.5
+    // =========================================================================
+
+    /// Asserts value is within tolerance of expected.
+    macro_rules! assert_close_u16 {
+        ($actual:expr, $expected:expr, $tol:expr, $msg:expr) => {{
+            let diff = ($actual as i32 - $expected as i32).unsigned_abs();
+            assert!(
+                diff <= $tol,
+                "{}: expected {}, got {} (diff: {})",
+                $msg,
+                $expected,
+                $actual,
+                diff
+            );
+        }};
+    }
+
+    #[test]
+    fn compare_cpp_opamp_rev_table() {
+        let config = FilterModelConfig::new();
+
+        // C++ reference values from FilterModelConfig6581::getOpampRev(i)
+        assert_close_u16!(config.opamp_rev[0], 0, 1, "opamp_rev[0]");
+        assert_close_u16!(config.opamp_rev[1000], 0, 1, "opamp_rev[1000]");
+        assert_close_u16!(config.opamp_rev[10000], 14384, 10, "opamp_rev[10000]");
+        assert_close_u16!(config.opamp_rev[32768], 24299, 10, "opamp_rev[32768]");
+        assert_close_u16!(config.opamp_rev[50000], 36472, 10, "opamp_rev[50000]");
+        assert_close_u16!(config.opamp_rev[65535], 65159, 10, "opamp_rev[65535]");
+    }
+
+    #[test]
+    fn compare_cpp_vcr_n_vg_table() {
+        let config = FilterModelConfig::new();
+
+        // C++ reference values from FilterModelConfig6581::getVcr_nVg(i)
+        assert_close_u16!(config.vcr_n_vg[0], 65535, 1, "vcr_n_vg[0]");
+        assert_close_u16!(config.vcr_n_vg[1000], 57440, 10, "vcr_n_vg[1000]");
+        assert_close_u16!(config.vcr_n_vg[10000], 39935, 10, "vcr_n_vg[10000]");
+        assert_close_u16!(config.vcr_n_vg[50000], 8292, 10, "vcr_n_vg[50000]");
+        assert_close_u16!(config.vcr_n_vg[65535], 0, 1, "vcr_n_vg[65535]");
+    }
+
+    #[test]
+    fn compare_cpp_vcr_n_ids_term_table() {
+        let config = FilterModelConfig::new();
+
+        // C++ reference values from FilterModelConfig6581::getVcr_n_Ids_term(i)
+        assert_close_u16!(config.get_vcr_n_ids_term(0), 0, 1, "vcr_n_ids_term[0]");
+        assert_close_u16!(
+            config.get_vcr_n_ids_term(1000),
+            0,
+            1,
+            "vcr_n_ids_term[1000]"
+        );
+        assert_close_u16!(
+            config.get_vcr_n_ids_term(10000),
+            0,
+            1,
+            "vcr_n_ids_term[10000]"
+        );
+        assert_close_u16!(
+            config.get_vcr_n_ids_term(32768),
+            1,
+            1,
+            "vcr_n_ids_term[32768]"
+        );
+        assert_close_u16!(
+            config.get_vcr_n_ids_term(50000),
+            4364,
+            50,
+            "vcr_n_ids_term[50000]"
+        );
+        assert_close_u16!(
+            config.get_vcr_n_ids_term(65535),
+            15780,
+            100,
+            "vcr_n_ids_term[65535]"
+        );
+    }
+
+    #[test]
+    fn compare_cpp_f0_dac_table() {
+        let config = FilterModelConfig::new();
+
+        // C++ reference values from FilterModelConfig6581::getDAC(0.5)
+        assert_close_u16!(config.f0_dac[0], 41430, 10, "f0_dac[0]");
+        assert_close_u16!(config.f0_dac[256], 43620, 10, "f0_dac[256]");
+        assert_close_u16!(config.f0_dac[512], 45676, 10, "f0_dac[512]");
+        assert_close_u16!(config.f0_dac[1024], 49664, 10, "f0_dac[1024]");
+        assert_close_u16!(config.f0_dac[2047], 58434, 10, "f0_dac[2047]");
     }
 }

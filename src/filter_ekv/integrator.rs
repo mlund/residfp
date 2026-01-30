@@ -239,7 +239,7 @@ mod tests {
         let config = FilterModelConfig::new();
         let mut integrator = Integrator6581::new(&config);
 
-        // C++ uses dac[1024] = 49663
+        // C++ uses dac[1024] = 49664
         let vw = config.get_f0_dac(1024);
         integrator.set_vw(vw);
 
