@@ -69,7 +69,28 @@ impl Voice {
         self.wave.set_control(value);
     }
 
-    /// Amplitude modulated 20-bit waveform output.
+    /// Amplitude modulated waveform output using DAC nonlinearity model.
+    /// The waveform and envelope values are looked up in DAC tables to
+    /// emulate R-2R ladder imperfections (6581) or linear response (8580).
+    #[inline]
+    pub fn output_dac(
+        &self,
+        sync_source: Option<&WaveformGenerator>,
+        wav_dac: &[f32],
+        env_dac: &[f32],
+    ) -> i32 {
+        let wav = self.wave.output(sync_source) as usize;
+        let env = self.envelope.output() as usize;
+        // DAC tables are normalized to [0, 1], scale to voice output range
+        // Range: approximately [-2048*255, 2047*255] centered around voice_dc
+        let wav_analog = wav_dac[wav] - wav_dac[self.wave_zero as usize];
+        let env_analog = env_dac[env];
+        // Scale to 20-bit range and add DC offset
+        let output = wav_analog * env_analog * (4096.0 * 256.0);
+        output as i32 + self.voice_dc
+    }
+
+    /// Amplitude modulated 20-bit waveform output (legacy linear model).
     /// Range [-2048*255, 2047*255].
     #[inline]
     pub fn output(&self, sync_source: Option<&WaveformGenerator>) -> i32 {
@@ -87,6 +108,11 @@ impl Voice {
 impl Syncable<&'_ Voice> {
     pub fn output(&self) -> i32 {
         self.main.output(Some(&self.sync_source.wave))
+    }
+
+    pub fn output_dac(&self, wav_dac: &[f32], env_dac: &[f32]) -> i32 {
+        self.main
+            .output_dac(Some(&self.sync_source.wave), wav_dac, env_dac)
     }
 }
 

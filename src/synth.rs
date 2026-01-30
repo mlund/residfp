@@ -5,6 +5,9 @@
 
 #![allow(clippy::cast_lossless)]
 
+use alloc::boxed::Box;
+
+use super::dac::build_dac_table;
 use super::external_filter::ExternalFilter;
 use super::filter::Filter;
 use super::sid::reg;
@@ -16,12 +19,23 @@ const OUTPUT_RANGE: u32 = 1 << 16;
 const OUTPUT_HALF: i32 = (OUTPUT_RANGE >> 1) as i32;
 const SAMPLES_PER_OUTPUT: u32 = ((4095 * 255) >> 7) * 3 * 15 * 2 / OUTPUT_RANGE;
 
-#[derive(Clone, Copy)]
+/// DAC lookup tables for waveform (12-bit) and envelope (8-bit)
+#[derive(Clone)]
+pub struct DacTables {
+    /// Waveform DAC: 4096 entries for 12-bit input
+    pub wav: Box<[f32]>,
+    /// Envelope DAC: 256 entries for 8-bit input
+    pub env: Box<[f32]>,
+}
+
+#[derive(Clone)]
 pub struct Synth {
     pub ext_filter: ExternalFilter,
     pub filter: Filter,
     pub voices: [Voice; 3],
     pub ext_in: i32,
+    /// DAC nonlinearity tables for accurate R-2R ladder emulation
+    pub dac: DacTables,
 }
 
 // slice::rotate_left is inefficient for small arrays:
@@ -42,6 +56,10 @@ impl Synth {
             filter: Filter::new(chip_model),
             voices: [Voice::new(chip_model); 3],
             ext_in: 0,
+            dac: DacTables {
+                wav: build_dac_table(12, chip_model).into_boxed_slice(),
+                env: build_dac_table(8, chip_model).into_boxed_slice(),
+            },
         }
     }
 
@@ -78,11 +96,14 @@ impl Synth {
         for i in 0..3 {
             self.syncable_voice_mut(i).wave().synchronize();
         }
-        // Clock filter.
+        // Clock filter with DAC-modeled voice outputs.
         self.filter.clock(
-            self.syncable_voice(0).output(),
-            self.syncable_voice(1).output(),
-            self.syncable_voice(2).output(),
+            self.syncable_voice(0)
+                .output_dac(&self.dac.wav, &self.dac.env),
+            self.syncable_voice(1)
+                .output_dac(&self.dac.wav, &self.dac.env),
+            self.syncable_voice(2)
+                .output_dac(&self.dac.wav, &self.dac.env),
             self.ext_in,
         );
         // Clock external filter.
@@ -133,12 +154,15 @@ impl Synth {
             }
             delta_osc -= delta_min;
         }
-        // Clock filter.
+        // Clock filter with DAC-modeled voice outputs.
         self.filter.clock_delta(
             delta,
-            self.syncable_voice(0).output(),
-            self.syncable_voice(1).output(),
-            self.syncable_voice(2).output(),
+            self.syncable_voice(0)
+                .output_dac(&self.dac.wav, &self.dac.env),
+            self.syncable_voice(1)
+                .output_dac(&self.dac.wav, &self.dac.env),
+            self.syncable_voice(2)
+                .output_dac(&self.dac.wav, &self.dac.env),
             self.ext_in,
         );
         // Clock external filter.

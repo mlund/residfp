@@ -10,6 +10,7 @@ extern crate alloc;
 #[cfg(all(feature = "alloc", feature = "std"))]
 extern crate std as alloc;
 
+pub mod dac;
 mod data;
 pub mod envelope;
 pub mod external_filter;
