@@ -35,6 +35,59 @@ const RING_SIZE: usize = 16384;
 const FIXP_SHIFT: i32 = 16;
 const FIXP_MASK: i32 = 0xffff;
 
+// Soft clipping threshold - values below pass unchanged
+const SOFT_CLIP_THRESHOLD: i32 = 28000;
+
+/// Padé tanh approximation (5th order), accurate for |x| < 3.
+#[inline]
+fn tanh_pade(x: f64) -> f64 {
+    if x.abs() < 3.0 {
+        let x2 = x * x;
+        let num = x * (945.0 + x2 * (105.0 + x2));
+        let den = 945.0 + x2 * (420.0 + x2 * 15.0);
+        num / den
+    } else {
+        // Beyond approximation range, use sign
+        if x > 0.0 {
+            1.0
+        } else {
+            -1.0
+        }
+    }
+}
+
+/// Soft clip positive value using tanh curve above threshold.
+/// Creates smooth saturation instead of hard clipping.
+#[inline]
+fn soft_clip_positive(x: i32, max_val: i32) -> i32 {
+    if x < SOFT_CLIP_THRESHOLD {
+        return x;
+    }
+
+    let max_f = max_val as f64;
+    let t = SOFT_CLIP_THRESHOLD as f64 / max_f;
+    let a = 1.0 - t;
+    let b = 1.0 / a;
+
+    let value = (x - SOFT_CLIP_THRESHOLD) as f64 / max_f;
+    let result = t + a * tanh_pade(b * value);
+    (result * max_f) as i32
+}
+
+/// Soft clip into 16-bit range [-32768, 32767].
+/// Uses tanh curve for smooth saturation above threshold.
+#[inline]
+pub fn soft_clip(x: i32) -> i16 {
+    if x < 0 {
+        // Handle i32::MIN overflow case
+        let abs_x = if x == i32::MIN { i32::MAX } else { -x };
+        // Negate as i32 first to avoid i16 overflow
+        (-soft_clip_positive(abs_x, 32768)) as i16
+    } else {
+        soft_clip_positive(x, 32767) as i16
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum SamplingMethod {
     Fast,
@@ -244,7 +297,6 @@ impl Sampler {
         interleave: usize,
     ) -> (usize, u32) {
         let mut index = 0;
-        let half = 1i32 << 15;
         loop {
             let next_sample_offset = self.get_next_sample_offset2();
             let delta_sample = (next_sample_offset >> FIXP_SHIFT) as u32;
@@ -299,14 +351,8 @@ impl Sampler {
             let mut v = v1 + ((fir_offset_rmd * (v2 - v1)) >> FIXP_SHIFT);
             v >>= FIR_SHIFT;
 
-            // Saturated arithmetics to guard against 16 bit sample overflow.
-            if v >= half {
-                v = half - 1;
-            } else if v < -half {
-                v = -half;
-            }
-
-            buffer[index * interleave] = v as i16;
+            // Soft clip for smooth saturation near 16-bit boundaries
+            buffer[index * interleave] = soft_clip(v);
             index += 1;
         }
         if delta > 0 && index < buffer.len() {
@@ -335,7 +381,6 @@ impl Sampler {
         interleave: usize,
     ) -> (usize, u32) {
         let mut index = 0;
-        let half = 1i32 << 15;
         loop {
             let next_sample_offset = self.get_next_sample_offset2();
             let delta_sample = (next_sample_offset >> FIXP_SHIFT) as u32;
@@ -367,14 +412,8 @@ impl Sampler {
             );
             v >>= FIR_SHIFT;
 
-            // Saturated arithmetics to guard against 16 bit sample overflow.
-            if v >= half {
-                v = half - 1;
-            } else if v < -half {
-                v = -half;
-            }
-
-            buffer[index * interleave] = v as i16;
+            // Soft clip for smooth saturation near 16-bit boundaries
+            buffer[index * interleave] = soft_clip(v);
             index += 1;
         }
         if delta > 0 && index < buffer.len() {
