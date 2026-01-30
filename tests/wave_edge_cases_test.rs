@@ -182,3 +182,44 @@ test_waveform!(waveform_triangle, 1, |o| o > 0 && o < 0x0fff);
 test_waveform!(waveform_sawtooth, 2, |o| o > 0 && o <= 0x0fff);
 test_waveform!(waveform_pulse, 4, |o| o == 0 || o == 0x0fff);
 test_waveform!(waveform_noise, 8, |_| true); // any value valid
+
+/// Noise write-back: switching between noise and combined waveforms modifies LFSR.
+///
+/// From libresidfp TestNoiseWriteBack1:
+/// When a combined waveform including noise is selected, the waveform output
+/// can pull down bits in the shift register. This causes the noise pattern
+/// to change when switching back to pure noise.
+///
+/// Not implemented: resid-rs returns 0 for combined noise waveforms (0x9-0xf)
+/// and has no write-back mechanism. This test documents the expected libresidfp
+/// behavior as a target for future implementation.
+#[test]
+#[ignore = "write-back not implemented: requires combined noise waveforms and LFSR write-back"]
+fn noise_write_back() {
+    let mut gen = new_wave();
+    gen.set_control(0x80); // noise waveform
+
+    // Switch from noise to noise+triangle to trigger write-back
+    gen.set_control(0x88); // noise + test bit
+    gen.clock();
+    let _ = gen.output(None);
+    gen.set_control(0x90); // noise + triangle
+    gen.clock();
+    let _ = gen.output(None);
+
+    // Expected OSC3 values from libresidfp after repeated noise<->combined switching
+    let expected_osc3: [u8; 8] = [0xfc, 0x6c, 0xd8, 0xb1, 0xd8, 0x6a, 0xb1, 0xf0];
+
+    for &expected in &expected_osc3 {
+        gen.set_control(0x88); // noise + test bit
+        gen.clock();
+        let _ = gen.output(None);
+        gen.set_control(0x80); // noise only
+        gen.clock();
+        let osc3 = (gen.output(None) >> 4) as u8;
+        assert_eq!(
+            osc3, expected,
+            "Write-back should modify LFSR, changing noise output"
+        );
+    }
+}
