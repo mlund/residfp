@@ -147,28 +147,6 @@ fn cubic_coefficients(
     (a, b, c, d)
 }
 
-/// Evaluation of cubic polynomial by brute force.
-#[allow(dead_code)]
-fn interpolate_brute_force(
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-    k1: f64,
-    k2: f64,
-    plotter: &mut PointPlotter,
-    res: f64,
-) {
-    let (a, b, c, d) = cubic_coefficients(x1, y1, x2, y2, k1, k2);
-    // Calculate each point.
-    let mut xi = x1;
-    while xi <= x2 {
-        let yi = ((a * xi + b) * xi + c) * xi + d;
-        plotter.plot(xi, yi);
-        xi += res;
-    }
-}
-
 /// Evaluation of cubic polynomial by forward differencing.
 fn interpolate_forward_difference(
     x1: f64,

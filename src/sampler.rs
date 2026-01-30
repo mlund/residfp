@@ -3,7 +3,9 @@
 // Portions (c) 2004 Dag Lem <resid@nimrod.no>
 // Licensed under the GPLv3. See LICENSE file in the project root for full license text.
 
+// Allow cast_lossless: intentional i16->i32 casts for audio sample processing
 #![allow(clippy::cast_lossless)]
+// Allow cast_ptr_alignment: SIMD pointer casts are aligned by construction
 #![allow(clippy::cast_ptr_alignment)]
 
 use core::f64;

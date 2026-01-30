@@ -186,81 +186,7 @@ impl Filter {
             return;
         }
 
-        // Route voices into or around filter.
-        // The code below is expanded to a switch for faster execution.
-        // (filt1 ? Vi : Vnf) += voice1;
-        // (filt2 ? Vi : Vnf) += voice2;
-        // (filt3 ? Vi : Vnf) += voice3;
-        let vi = match self.filt {
-            0x0 => {
-                self.vnf = voice1 + voice2 + voice3 + ext_in;
-                0
-            }
-            0x1 => {
-                self.vnf = voice2 + voice3 + ext_in;
-                voice1
-            }
-            0x2 => {
-                self.vnf = voice1 + voice3 + ext_in;
-                voice2
-            }
-            0x3 => {
-                self.vnf = voice3 + ext_in;
-                voice1 + voice2
-            }
-            0x4 => {
-                self.vnf = voice1 + voice2 + ext_in;
-                voice3
-            }
-            0x5 => {
-                self.vnf = voice2 + ext_in;
-                voice1 + voice3
-            }
-            0x6 => {
-                self.vnf = voice1 + ext_in;
-                voice2 + voice3
-            }
-            0x7 => {
-                self.vnf = ext_in;
-                voice1 + voice2 + voice3
-            }
-            0x8 => {
-                self.vnf = voice1 + voice2 + voice3;
-                ext_in
-            }
-            0x9 => {
-                self.vnf = voice2 + voice3;
-                voice1 + ext_in
-            }
-            0xa => {
-                self.vnf = voice1 + voice3;
-                voice2 + ext_in
-            }
-            0xb => {
-                self.vnf = voice3;
-                voice1 + voice2 + ext_in
-            }
-            0xc => {
-                self.vnf = voice1 + voice2;
-                voice3 + ext_in
-            }
-            0xd => {
-                self.vnf = voice2;
-                voice1 + voice3 + ext_in
-            }
-            0xe => {
-                self.vnf = voice1;
-                voice2 + voice3 + ext_in
-            }
-            0xf => {
-                self.vnf = 0;
-                voice1 + voice2 + voice3 + ext_in
-            }
-            _ => {
-                self.vnf = voice1 + voice2 + voice3 + ext_in;
-                0
-            }
-        };
+        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
 
         // delta_t = 1 is converted to seconds given a 1MHz clock by dividing
         // with 1 000 000.
@@ -306,12 +232,41 @@ impl Filter {
             return;
         }
 
-        // Route voices into or around filter.
-        // The code below is expanded to a switch for faster execution.
-        // (filt1 ? Vi : Vnf) += voice1;
-        // (filt2 ? Vi : Vnf) += voice2;
-        // (filt3 ? Vi : Vnf) += voice3;
-        let vi = match self.filt {
+        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+
+        // Maximum delta cycles for the filter to work satisfactorily under current
+        // cutoff frequency and resonance constraints is approximately 8.
+        let mut delta_flt = 8;
+
+        while delta != 0 {
+            if delta < delta_flt {
+                delta_flt = delta;
+            }
+            // delta_t is converted to seconds given a 1MHz clock by dividing
+            // with 1 000 000. This is done in two operations to avoid integer
+            // multiplication overflow.
+
+            // Calculate filter outputs.
+            // Vhp = Vbp/Q - Vlp - Vi;
+            // dVbp = -w0*Vhp*dt;
+            // dVlp = -w0*Vbp*dt;
+            let w0_delta_t = (self.w0_ceil_dt * delta_flt as i32) >> 6;
+            let dvbp = (w0_delta_t * self.vhp) >> 14;
+            let dvlp = (w0_delta_t * self.vbp) >> 14;
+            self.vbp -= dvbp;
+            self.vlp -= dvlp;
+            self.vhp = ((self.vbp * self.q_1024_div) >> 10) - self.vlp - vi;
+
+            delta -= delta_flt;
+        }
+    }
+
+    /// Routes voices into or around the filter based on filt register.
+    ///
+    /// The 16-case match is expanded for performance (avoids bit testing overhead).
+    #[inline]
+    fn route_voices(&mut self, voice1: i32, voice2: i32, voice3: i32, ext_in: i32) -> i32 {
+        match self.filt {
             0x0 => {
                 self.vnf = voice1 + voice2 + voice3 + ext_in;
                 0
@@ -380,32 +335,6 @@ impl Filter {
                 self.vnf = voice1 + voice2 + voice3 + ext_in;
                 0
             }
-        };
-
-        // Maximum delta cycles for the filter to work satisfactorily under current
-        // cutoff frequency and resonance constraints is approximately 8.
-        let mut delta_flt = 8;
-
-        while delta != 0 {
-            if delta < delta_flt {
-                delta_flt = delta;
-            }
-            // delta_t is converted to seconds given a 1MHz clock by dividing
-            // with 1 000 000. This is done in two operations to avoid integer
-            // multiplication overflow.
-
-            // Calculate filter outputs.
-            // Vhp = Vbp/Q - Vlp - Vi;
-            // dVbp = -w0*Vhp*dt;
-            // dVlp = -w0*Vbp*dt;
-            let w0_delta_t = (self.w0_ceil_dt * delta_flt as i32) >> 6;
-            let dvbp = (w0_delta_t * self.vhp) >> 14;
-            let dvlp = (w0_delta_t * self.vbp) >> 14;
-            self.vbp -= dvbp;
-            self.vlp -= dvlp;
-            self.vhp = ((self.vbp * self.q_1024_div) >> 10) - self.vlp - vi;
-
-            delta -= delta_flt;
         }
     }
 
