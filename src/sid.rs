@@ -6,7 +6,14 @@
 use super::envelope::State as EnvState;
 use super::sampler::{Sampler, SamplingMethod};
 use super::synth::Synth;
-use super::ChipModel;
+use super::{ChipModel, SamplingError};
+
+/// Default clock frequency: PAL C64 (~985 kHz)
+const DEFAULT_CLOCK_FREQ: u32 = 985_248;
+/// Default sample rate: CD quality (44.1 kHz)
+const DEFAULT_SAMPLE_FREQ: u32 = 44100;
+/// Bus value time-to-live in clock cycles (~8ms decay)
+const BUS_VALUE_TTL: u32 = 0x2000;
 
 pub mod reg {
     pub const FREQLO1: u8 = 0x00;
@@ -77,22 +84,34 @@ impl Sid {
             bus_value: 0,
             bus_value_ttl: 0,
         };
-        sid.set_sampling_parameters(SamplingMethod::Fast, 985_248, 44100);
+        sid.set_sampling_parameters(
+            SamplingMethod::Fast,
+            DEFAULT_CLOCK_FREQ,
+            DEFAULT_SAMPLE_FREQ,
+        )
+        .expect("default sampling parameters are valid");
         sid
     }
 
+    /// Set sampling parameters for audio output.
+    ///
+    /// # Errors
+    /// Returns `SamplingError::ZeroClockFreq` if `clock_freq` is zero.
+    /// Returns `SamplingError::ZeroSampleFreq` if `sample_freq` is zero.
     pub fn set_sampling_parameters(
         &mut self,
         method: SamplingMethod,
         clock_freq: u32,
         sample_freq: u32,
-    ) {
-        self.sampler.set_parameters(method, clock_freq, sample_freq);
+    ) -> Result<(), SamplingError> {
+        self.sampler
+            .set_parameters(method, clock_freq, sample_freq)?;
         // Update external filter coefficients for the new clock frequency
         self.sampler
             .synth
             .ext_filter
             .set_clock_frequency(clock_freq as f64);
+        Ok(())
     }
 
     pub fn clock(&mut self) {
@@ -186,7 +205,7 @@ impl Sid {
 
     pub fn write(&mut self, reg: u8, value: u8) {
         self.bus_value = value;
-        self.bus_value_ttl = 0x2000;
+        self.bus_value_ttl = BUS_VALUE_TTL;
         self.sampler.synth.write(reg, value);
     }
 

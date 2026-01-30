@@ -130,7 +130,7 @@ impl<'a> PointPlotter<'a> {
 }
 
 /// Calculation of coefficients.
-fn cubic_coefficients(
+const fn cubic_coefficients(
     x1: f64,
     y1: f64,
     x2: f64,

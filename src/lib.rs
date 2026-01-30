@@ -24,9 +24,6 @@ pub mod synth;
 pub mod voice;
 pub mod wave;
 
-#[cfg(not(feature = "std"))]
-mod math;
-
 #[derive(Clone, Copy)]
 pub enum ChipModel {
     Mos6581,
@@ -35,3 +32,12 @@ pub enum ChipModel {
 
 pub use self::sampler::SamplingMethod;
 pub use self::sid::Sid;
+
+/// Error returned when sampling parameters are invalid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SamplingError {
+    /// Clock frequency must be non-zero.
+    ZeroClockFreq,
+    /// Sample frequency must be non-zero.
+    ZeroSampleFreq,
+}

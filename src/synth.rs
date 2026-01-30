@@ -40,6 +40,7 @@ pub struct Synth {
 
 // slice::rotate_left is inefficient for small arrays:
 // https://github.com/rust-lang/rust/issues/89714
+// Note: Cannot be const fn because it's used with &mut T which doesn't impl Copy
 fn rotate3<T>([a, b, c]: [T; 3], i: usize) -> [T; 3] {
     match i {
         0 => [a, b, c],

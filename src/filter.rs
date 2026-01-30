@@ -12,6 +12,18 @@ use super::ChipModel;
 
 const MIXER_DC: i32 = (-0xfff * 0xff / 18) >> 7;
 
+/// Minimum Q factor (~1/√2, critically damped)
+const Q_MIN: f64 = 0.707;
+
+/// Maximum cutoff frequency for 1-cycle filter stability (Hz)
+const F0_MAX_1CYCLE: f64 = 16000.0;
+
+/// Maximum cutoff frequency for delta-cycle filter stability (Hz)
+const F0_MAX_DELTA: f64 = 4000.0;
+
+/// Fixed-point multiplier for 1MHz clock (2^20 / 1_000_000)
+const FIXP_SCALE: f64 = 1.048_576;
+
 /// The SID filter is modeled with a two-integrator-loop biquadratic filter,
 /// which has been confirmed by Bob Yannes to be the actual circuit used in
 /// the SID chip.
@@ -384,13 +396,13 @@ impl Filter {
     }
 
     fn set_q(&mut self) {
-        // Q is controlled linearly by res. Q has approximate range [0.707, 1.7].
+        // Q is controlled linearly by res. Q has approximate range [Q_MIN, 1.7].
         // As resonance is increased, the filter must be clocked more often to keep
         // stable.
 
         // The coefficient 1024 is dispensed of later by right-shifting 10 times
         // (2 ^ 10 = 1024).
-        self.q_1024_div = (1024.0 / (0.707 + 1.0 * self.res as f64 / 15.0)) as i32;
+        self.q_1024_div = (1024.0 / (Q_MIN + 1.0 * self.res as f64 / 15.0)) as i32;
     }
 
     fn set_w0(&mut self) {
@@ -414,24 +426,16 @@ impl Filter {
             }
         };
 
-        // Multiply with 1.048576 to facilitate division by 1 000 000 by right-
+        // Multiply with FIXP_SCALE to facilitate division by 1_000_000 by right-
         // shifting 20 times (2 ^ 20 = 1048576).
-        self.w0 = (2.0 * f64::consts::PI * adjusted_freq * 1.048_576) as i32;
+        self.w0 = (2.0 * f64::consts::PI * adjusted_freq * FIXP_SCALE) as i32;
 
-        // Limit f0 to 16kHz to keep 1 cycle filter stable.
-        let w0_max_1 = (2.0 * f64::consts::PI * 16000.0 * 1.048_576) as i32;
-        self.w0_ceil_1 = if self.w0 <= w0_max_1 {
-            self.w0
-        } else {
-            w0_max_1
-        };
+        // Limit f0 to keep 1-cycle filter stable.
+        let w0_max_1 = (2.0 * f64::consts::PI * F0_MAX_1CYCLE * FIXP_SCALE) as i32;
+        self.w0_ceil_1 = self.w0.min(w0_max_1);
 
-        // Limit f0 to 4kHz to keep delta_t cycle filter stable.
-        let w0_max_dt = (2.0 * f64::consts::PI * 4000.0 * 1.048_576) as i32;
-        self.w0_ceil_dt = if self.w0 <= w0_max_dt {
-            self.w0
-        } else {
-            w0_max_dt
-        };
+        // Limit f0 to keep delta-cycle filter stable.
+        let w0_max_dt = (2.0 * f64::consts::PI * F0_MAX_DELTA * FIXP_SCALE) as i32;
+        self.w0_ceil_dt = self.w0.min(w0_max_dt);
     }
 }

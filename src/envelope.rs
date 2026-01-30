@@ -54,7 +54,7 @@ const RATE_COUNTER_MSB_MASK: u16 = 0x8000;
 // The described method is thus sufficient for exact calculation of the rate
 // periods.
 //
-static RATE_COUNTER_PERIOD: [u16; 16] = [
+const RATE_COUNTER_PERIOD: [u16; 16] = [
     9,     // 2ms*1.0MHz/256 = 7.81
     32,    // 8ms*1.0MHz/256 = 31.25
     63,    // 16ms*1.0MHz/256 = 62.50
@@ -76,7 +76,7 @@ static RATE_COUNTER_PERIOD: [u16; 16] = [
 /// From the sustain levels it follows that both the low and high 4 bits of the
 /// envelope counter are compared to the 4-bit sustain value.
 /// This has been verified by sampling ENV3.
-static SUSTAIN_LEVEL: [u8; 16] = [
+const SUSTAIN_LEVEL: [u8; 16] = [
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
 ];
 
@@ -185,86 +185,94 @@ impl EnvelopeGenerator {
         }
     }
 
+    /// Step the envelope counter based on current ADSR state.
+    /// Attack increments, Decay/Release decrement.
+    #[inline]
+    fn step_envelope(&mut self) {
+        match self.state {
+            State::Attack => {
+                // Counter can flip 0xff→0x00 via release→attack transition,
+                // freezing at zero until another release→attack cycle.
+                self.envelope_counter = self.envelope_counter.wrapping_add(1);
+                if self.envelope_counter == 0xff {
+                    self.state = State::DecaySustain;
+                    self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize];
+                }
+            }
+            State::DecaySustain => {
+                if self.envelope_counter != SUSTAIN_LEVEL[self.sustain as usize] {
+                    self.envelope_counter = self.envelope_counter.wrapping_sub(1);
+                }
+            }
+            State::Release => {
+                // Counter can flip 0x00→0xff via attack→release transition,
+                // then continues counting down.
+                self.envelope_counter = self.envelope_counter.wrapping_sub(1);
+            }
+        }
+    }
+
+    /// Update exponential counter period based on envelope counter value.
+    /// Period increases as counter decreases, modeling RC discharge curve.
+    #[inline]
+    fn update_exponential_period(&mut self) {
+        match self.envelope_counter {
+            0xff => self.exponential_counter_period = 1,
+            0x5d => self.exponential_counter_period = 2,
+            0x36 => self.exponential_counter_period = 4,
+            0x1a => self.exponential_counter_period = 8,
+            0x0e => self.exponential_counter_period = 16,
+            0x06 => self.exponential_counter_period = 30,
+            0x00 => {
+                self.exponential_counter_period = 1;
+                // Counter frozen at zero until gate cycles off→on.
+                self.hold_zero = true;
+            }
+            _ => {}
+        }
+    }
+
     #[inline]
     pub fn clock(&mut self) {
-        // Check for ADSR delay bug.
-        // If the rate counter comparison value is set below the current value of the
-        // rate counter, the counter will continue counting up until it wraps around
-        // to zero at 2^15 = 0x8000, and then count rate_period - 1 before the
-        // envelope can finally be stepped.
-        // This has been verified by sampling ENV3.
+        // ADSR delay bug: if rate_counter_period is set below rate_counter,
+        // counter wraps at 2^15 before envelope can step.
         self.rate_counter += 1;
         if self.rate_counter & RATE_COUNTER_MSB_MASK != 0 {
             self.rate_counter += 1;
             self.rate_counter &= RATE_COUNTER_MASK;
         }
-        if self.rate_counter == self.rate_counter_period {
-            self.rate_counter = 0;
-            // The first envelope step in the attack state also resets the exponential
-            // counter. This has been verified by sampling ENV3.
-            self.exponential_counter += 1; // TODO check w/ ref impl
-            if self.state == State::Attack
-                || self.exponential_counter == self.exponential_counter_period
-            {
-                self.exponential_counter = 0;
-                // Check whether the envelope counter is frozen at zero.
-                if self.hold_zero {
-                    return;
-                }
-                match self.state {
-                    State::Attack => {
-                        // The envelope counter can flip from 0xff to 0x00 by changing state to
-                        // release, then to attack. The envelope counter is then frozen at
-                        // zero; to unlock this situation the state must be changed to release,
-                        // then to attack. This has been verified by sampling ENV3.
-                        self.envelope_counter = self.envelope_counter.wrapping_add(1);
-                        if self.envelope_counter == 0xff {
-                            self.state = State::DecaySustain;
-                            self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize];
-                        }
-                    }
-                    State::DecaySustain => {
-                        if self.envelope_counter != SUSTAIN_LEVEL[self.sustain as usize] {
-                            self.envelope_counter = self.envelope_counter.wrapping_sub(1);
-                        }
-                    }
-                    State::Release => {
-                        // The envelope counter can flip from 0x00 to 0xff by changing state to
-                        // attack, then to release. The envelope counter will then continue
-                        // counting down in the release state.
-                        // This has been verified by sampling ENV3.
-                        self.envelope_counter = self.envelope_counter.wrapping_sub(1);
-                    }
-                }
-                // Check for change of exponential counter period.
-                match self.envelope_counter {
-                    0xff => self.exponential_counter_period = 1,
-                    0x5d => self.exponential_counter_period = 2,
-                    0x36 => self.exponential_counter_period = 4,
-                    0x1a => self.exponential_counter_period = 8,
-                    0x0e => self.exponential_counter_period = 16,
-                    0x06 => self.exponential_counter_period = 30,
-                    0x00 => {
-                        self.exponential_counter_period = 1;
-                        // When the envelope counter is changed to zero, it is frozen at zero.
-                        // This has been verified by sampling ENV3.
-                        self.hold_zero = true;
-                    }
-                    _ => {}
-                }
-            }
+        if self.rate_counter != self.rate_counter_period {
+            return;
         }
+        self.rate_counter = 0;
+
+        // Attack state resets exponential counter on first step.
+        self.exponential_counter += 1;
+        if self.state != State::Attack
+            && self.exponential_counter != self.exponential_counter_period
+        {
+            return;
+        }
+        self.exponential_counter = 0;
+
+        if self.hold_zero {
+            return;
+        }
+        self.step_envelope();
+        self.update_exponential_period();
     }
 
     #[inline]
     pub fn clock_delta(&mut self, mut delta: u32) {
-        // NB! This requires two's complement integer.
+        // Calculate cycles until next rate counter match (two's complement math).
         let mut rate_step = self.rate_counter_period as i32 - self.rate_counter as i32;
         if rate_step <= 0 {
             rate_step += 0x7fff;
         }
+
         while delta != 0 {
             if delta < rate_step as u32 {
+                // Partial step: just advance rate counter
                 self.rate_counter += delta as u16;
                 if self.rate_counter & RATE_COUNTER_MSB_MASK != 0 {
                     self.rate_counter += 1;
@@ -272,60 +280,20 @@ impl EnvelopeGenerator {
                 }
                 return;
             }
+
+            // Full rate period elapsed
             self.rate_counter = 0;
             delta -= rate_step as u32;
-            // The first envelope step in the attack state also resets the exponential
-            // counter. This has been verified by sampling ENV3.
-            self.exponential_counter += 1; // TODO check w/ ref impl
+
+            // Attack state resets exponential counter on first step.
+            self.exponential_counter += 1;
             if self.state == State::Attack
                 || self.exponential_counter == self.exponential_counter_period
             {
                 self.exponential_counter = 0;
-                // Check whether the envelope counter is frozen at zero.
-                if self.hold_zero {
-                    rate_step = self.rate_counter_period as i32;
-                    continue;
-                }
-                match self.state {
-                    State::Attack => {
-                        // The envelope counter can flip from 0xff to 0x00 by changing state to
-                        // release, then to attack. The envelope counter is then frozen at
-                        // zero; to unlock this situation the state must be changed to release,
-                        // then to attack. This has been verified by sampling ENV3.
-                        self.envelope_counter = self.envelope_counter.wrapping_add(1);
-                        if self.envelope_counter == 0xff {
-                            self.state = State::DecaySustain;
-                            self.rate_counter_period = RATE_COUNTER_PERIOD[self.decay as usize];
-                        }
-                    }
-                    State::DecaySustain => {
-                        if self.envelope_counter != SUSTAIN_LEVEL[self.sustain as usize] {
-                            self.envelope_counter = self.envelope_counter.wrapping_sub(1);
-                        }
-                    }
-                    State::Release => {
-                        // The envelope counter can flip from 0x00 to 0xff by changing state to
-                        // attack, then to release. The envelope counter will then continue
-                        // counting down in the release state.
-                        // This has been verified by sampling ENV3.
-                        self.envelope_counter = self.envelope_counter.wrapping_sub(1);
-                    }
-                }
-                // Check for change of exponential counter period.
-                match self.envelope_counter {
-                    0xff => self.exponential_counter_period = 1,
-                    0x5d => self.exponential_counter_period = 2,
-                    0x36 => self.exponential_counter_period = 4,
-                    0x1a => self.exponential_counter_period = 8,
-                    0x0e => self.exponential_counter_period = 16,
-                    0x06 => self.exponential_counter_period = 30,
-                    0x00 => {
-                        self.exponential_counter_period = 1;
-                        // When the envelope counter is changed to zero, it is frozen at zero.
-                        // This has been verified by sampling ENV3.
-                        self.hold_zero = true;
-                    }
-                    _ => {}
+                if !self.hold_zero {
+                    self.step_envelope();
+                    self.update_exponential_period();
                 }
             }
             rate_step = self.rate_counter_period as i32;

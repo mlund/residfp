@@ -13,12 +13,10 @@ use core::f64;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+use super::synth::Synth;
+use super::SamplingError;
 #[cfg(not(feature = "std"))]
 use libm::F64Ext;
-
-#[cfg(not(feature = "std"))]
-use super::math;
-use super::synth::Synth;
 
 use wide::{i16x16, i32x8};
 
@@ -33,12 +31,16 @@ const FIR_RES_FAST: i32 = 51473;
 const FIR_RES_INTERPOLATE: i32 = 285;
 const FIR_SHIFT: i32 = 15;
 const RING_SIZE: usize = 16384;
+const RING_MASK: usize = RING_SIZE - 1;
 
 const FIXP_SHIFT: i32 = 16;
 const FIXP_MASK: i32 = 0xffff;
 
-// Soft clipping threshold - values below pass unchanged
+/// Soft clipping threshold - values below pass unchanged
 const SOFT_CLIP_THRESHOLD: i32 = 28000;
+
+/// Default passband limit for resampling (Hz)
+const DEFAULT_PASS_FREQ: f64 = 20000.0;
 
 /// Padé tanh approximation (5th order), accurate for |x| < 3.
 #[inline]
@@ -76,7 +78,7 @@ fn soft_clip_positive(x: i32, max_val: i32) -> i32 {
     (result * max_f) as i32
 }
 
-/// Soft clip into 16-bit range [-32768, 32767].
+/// Soft clip into 16-bit range [i16::MIN, i16::MAX].
 /// Uses tanh curve for smooth saturation above threshold.
 #[inline]
 pub fn soft_clip(x: i32) -> i16 {
@@ -84,9 +86,10 @@ pub fn soft_clip(x: i32) -> i16 {
         // Handle i32::MIN overflow case
         let abs_x = if x == i32::MIN { i32::MAX } else { -x };
         // Negate as i32 first to avoid i16 overflow
-        (-soft_clip_positive(abs_x, 32768)) as i16
+        // Note: i16::MIN magnitude is 32768, one more than i16::MAX
+        (-soft_clip_positive(abs_x, (i16::MIN as i32).abs())) as i16
     } else {
-        soft_clip_positive(x, 32767) as i16
+        soft_clip_positive(x, i16::MAX as i32) as i16
     }
 }
 
@@ -150,7 +153,23 @@ impl Sampler {
         }
     }
 
-    pub fn set_parameters(&mut self, method: SamplingMethod, clock_freq: u32, sample_freq: u32) {
+    /// Set sampling parameters.
+    ///
+    /// # Errors
+    /// Returns `SamplingError::ZeroClockFreq` if `clock_freq` is zero.
+    /// Returns `SamplingError::ZeroSampleFreq` if `sample_freq` is zero.
+    pub fn set_parameters(
+        &mut self,
+        method: SamplingMethod,
+        clock_freq: u32,
+        sample_freq: u32,
+    ) -> Result<(), SamplingError> {
+        if clock_freq == 0 {
+            return Err(SamplingError::ZeroClockFreq);
+        }
+        if sample_freq == 0 {
+            return Err(SamplingError::ZeroSampleFreq);
+        }
         self.cycles_per_sample =
             (clock_freq as f64 / sample_freq as f64 * (1 << FIXP_SHIFT) as f64 + 0.5) as u32;
         self.sampling_method = method;
@@ -168,6 +187,7 @@ impl Sampler {
         self.index = 0;
         self.offset = 0;
         self.prev_sample = 0;
+        Ok(())
     }
 
     pub fn reset(&mut self) {
@@ -312,7 +332,7 @@ impl Sampler {
                 self.buffer[self.index] = output;
                 self.buffer[self.index + RING_SIZE] = output;
                 self.index += 1;
-                self.index &= 0x3fff;
+                self.index &= RING_MASK;
             }
             delta -= delta_sample;
             self.update_sample_offset2(next_sample_offset);
@@ -364,7 +384,7 @@ impl Sampler {
                 self.buffer[self.index] = output;
                 self.buffer[self.index + RING_SIZE] = output;
                 self.index += 1;
-                self.index &= 0x3fff;
+                self.index &= RING_MASK;
             }
             self.offset -= (delta as i32) << FIXP_SHIFT;
             (index, 0)
@@ -396,7 +416,7 @@ impl Sampler {
                 self.buffer[self.index] = output;
                 self.buffer[self.index + RING_SIZE] = output;
                 self.index += 1;
-                self.index &= 0x3fff;
+                self.index &= RING_MASK;
             }
             delta -= delta_sample;
             self.update_sample_offset2(next_sample_offset);
@@ -425,7 +445,7 @@ impl Sampler {
                 self.buffer[self.index] = output;
                 self.buffer[self.index + RING_SIZE] = output;
                 self.index += 1;
-                self.index &= 0x3fff;
+                self.index &= RING_MASK;
             }
             self.offset -= (delta as i32) << FIXP_SHIFT;
             (index, 0)
@@ -583,9 +603,9 @@ impl Sampler {
         let cycles_per_sample = clock_freq / sample_freq;
 
         // The default passband limit is 0.9*sample_freq/2 for sample
-        // frequencies below ~ 44.1kHz, and 20kHz for higher sample frequencies.
+        // frequencies below ~44.1kHz, and 20kHz for higher sample frequencies.
         if pass_freq < 0.0 {
-            pass_freq = 20000.0;
+            pass_freq = DEFAULT_PASS_FREQ;
             if 2.0 * pass_freq / sample_freq >= 0.9 {
                 pass_freq = 0.9 * sample_freq / 2.0;
             }
@@ -682,6 +702,6 @@ impl Sampler {
 
     #[cfg(not(feature = "std"))]
     fn sqrt(&self, value: f64) -> f64 {
-        math::sqrt(value)
+        libm::sqrt(value)
     }
 }

@@ -41,7 +41,7 @@ impl ChipModel {
 }
 
 /// Parallel resistance: r1 || r2
-fn parallel(r1: f64, r2: f64) -> f64 {
+const fn parallel(r1: f64, r2: f64) -> f64 {
     (r1 * r2) / (r1 + r2)
 }
 
