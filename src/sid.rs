@@ -124,6 +124,19 @@ impl Sid {
         self.sampler.synth.filter.set_enabled(enabled);
     }
 
+    /// Set filter curve parameter for tuning to match specific SID chips.
+    ///
+    /// Range: 0.0 (bright/high frequencies) to 1.0 (dark/low frequencies)
+    /// Default: 0.5
+    pub fn set_filter_curve(&mut self, curve: f64) {
+        self.sampler.synth.filter.set_filter_curve(curve);
+    }
+
+    /// Get current filter curve parameter.
+    pub fn get_filter_curve(&self) -> f64 {
+        self.sampler.synth.filter.get_filter_curve()
+    }
+
     pub fn input(&mut self, sample: i32) {
         // Voice outputs are 20 bits. Scale up to match three voices in order
         // to facilitate simulation of the MOS8580 "digi boost" hardware hack.

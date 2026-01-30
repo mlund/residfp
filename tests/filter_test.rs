@@ -268,3 +268,62 @@ fn filter_fc_res_filt() {
     let res = dump(&mut sid, "filter_fc_res_filt", SAMPLE_COUNT);
     assert_eq!(res, expected);
 }
+
+// Filter curve parameter tests
+
+#[test]
+fn filter_curve_default() {
+    let sid = Sid::new(ChipModel::Mos6581);
+    assert!((sid.get_filter_curve() - 0.5).abs() < f64::EPSILON);
+}
+
+#[test]
+fn filter_curve_set_get() {
+    let mut sid = Sid::new(ChipModel::Mos6581);
+    sid.set_filter_curve(0.2);
+    assert!((sid.get_filter_curve() - 0.2).abs() < f64::EPSILON);
+    sid.set_filter_curve(0.8);
+    assert!((sid.get_filter_curve() - 0.8).abs() < f64::EPSILON);
+}
+
+#[test]
+fn filter_curve_clamped() {
+    let mut sid = Sid::new(ChipModel::Mos6581);
+    sid.set_filter_curve(-0.5);
+    assert!((sid.get_filter_curve() - 0.0).abs() < f64::EPSILON);
+    sid.set_filter_curve(1.5);
+    assert!((sid.get_filter_curve() - 1.0).abs() < f64::EPSILON);
+}
+
+/// Verify that different curve values produce different filter outputs
+#[test]
+fn filter_curve_affects_output() {
+    fn sample_with_curve(curve: f64) -> Vec<i16> {
+        let mut sid = Sid::new(ChipModel::Mos6581);
+        sid.enable_external_filter(false);
+        sid.enable_filter(true);
+        sid.set_filter_curve(curve);
+        // Route voice 1 through lowpass filter
+        sid.write(0x00, 0xb1); // FREQ_LO
+        sid.write(0x01, 0x19); // FREQ_HI
+        sid.write(0x04, (2 << 4) | 1); // Sawtooth + gate
+        sid.write(0x05, 0x00); // Attack=0, Decay=0
+        sid.write(0x06, 0xf0); // Sustain=15, Release=0
+        sid.write(0x15, 0x00); // FC_LO
+        sid.write(0x16, 0x40); // FC_HI (mid-range cutoff)
+        sid.write(0x17, 0x01); // RESFILT: voice 1 through filter
+        sid.write(0x18, 0x1f); // Lowpass mode + volume 15
+        let mut buffer = vec![0i16; 64];
+        let _ = sid.sample(64 * CYCLES_PER_SAMPLE, &mut buffer, 1);
+        buffer
+    }
+
+    let bright = sample_with_curve(0.0);
+    let neutral = sample_with_curve(0.5);
+    let dark = sample_with_curve(1.0);
+
+    // Outputs should differ when curve changes
+    assert_ne!(bright, neutral, "Bright and neutral should differ");
+    assert_ne!(neutral, dark, "Neutral and dark should differ");
+    assert_ne!(bright, dark, "Bright and dark should differ");
+}

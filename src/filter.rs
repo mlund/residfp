@@ -43,10 +43,13 @@ const MIXER_DC: i32 = (-0xfff * 0xff / 18) >> 7;
 #[derive(Clone, Copy)]
 pub struct Filter {
     // Configuration
+    chip_model: ChipModel,
     enabled: bool,
     fc: u16,
     filt: u8,
     res: u8,
+    /// Filter curve parameter: 0.0 = bright, 1.0 = dark, default = 0.5
+    curve: f64,
     // Mode
     voice3_off: bool,
     hp_bp_lp: u8,
@@ -73,10 +76,12 @@ impl Filter {
             ChipModel::Mos8580 => &SPLINE8580_F0,
         };
         let mut filter = Filter {
+            chip_model,
             enabled: true,
             fc: 0,
             filt: 0,
             res: 0,
+            curve: 0.5,
             voice3_off: false,
             hp_bp_lp: 0,
             vol: 0,
@@ -94,6 +99,23 @@ impl Filter {
         filter.set_q();
         filter.set_w0();
         filter
+    }
+
+    /// Set filter curve parameter for tuning to match specific SID chips.
+    ///
+    /// Range: 0.0 (bright/high frequencies) to 1.0 (dark/low frequencies)
+    /// Default: 0.5
+    ///
+    /// For 6581: Shifts the filter cutoff frequency curve
+    /// For 8580: Scales the filter response
+    pub fn set_filter_curve(&mut self, curve: f64) {
+        self.curve = curve.clamp(0.0, 1.0);
+        self.set_w0();
+    }
+
+    /// Get current filter curve parameter.
+    pub fn get_filter_curve(&self) -> f64 {
+        self.curve
     }
 
     pub fn get_fc_hi(&self) -> u8 {
@@ -443,9 +465,29 @@ impl Filter {
     }
 
     fn set_w0(&mut self) {
+        let base_freq = self.f0[self.fc as usize] as f64;
+
+        // Apply curve adjustment to frequency
+        // curve: 0.0 = bright (higher freq), 1.0 = dark (lower freq), 0.5 = neutral
+        let adjusted_freq = match self.chip_model {
+            ChipModel::Mos6581 => {
+                // 6581: Frequency offset, approximately ±15% at extremes
+                // Maps curve 0->1 to scale 1.15->0.85
+                let scale = 1.15 - 0.30 * self.curve;
+                base_freq * scale
+            }
+            ChipModel::Mos8580 => {
+                // 8580: Based on cp parameter range (1.8 at curve=0 to 1.2 at curve=1)
+                // cp affects integrator response, equivalent to frequency scaling
+                // Maps curve 0->1 to scale 1.2->0.8 (normalized around 1.0 at curve=0.5)
+                let scale = 1.2 - 0.4 * self.curve;
+                base_freq * scale
+            }
+        };
+
         // Multiply with 1.048576 to facilitate division by 1 000 000 by right-
         // shifting 20 times (2 ^ 20 = 1048576).
-        self.w0 = (2.0 * f64::consts::PI * self.f0[self.fc as usize] as f64 * 1.048_576) as i32;
+        self.w0 = (2.0 * f64::consts::PI * adjusted_freq * 1.048_576) as i32;
 
         // Limit f0 to 16kHz to keep 1 cycle filter stable.
         let w0_max_1 = (2.0 * f64::consts::PI * 16000.0 * 1.048_576) as i32;
