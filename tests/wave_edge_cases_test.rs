@@ -100,7 +100,7 @@ fn accumulator_wrap() {
 }
 
 /// LFSR clocks when accumulator bit 19 transitions 0->1.
-/// This determines noise frequency (bit 19 = accumulator / 2^19).
+/// The shift is delayed 2 cycles after bit 19 is set high (hardware pipeline).
 #[test]
 fn shift_register_clock_on_bit19() {
     let mut gen = new_wave();
@@ -109,12 +109,27 @@ fn shift_register_clock_on_bit19() {
     // Position just below bit 19 boundary
     gen.set_acc(0x0007_fff0);
     gen.set_frequency_lo(0x20);
-    gen.clock(); // 0x7fff0 + 0x20 = 0x80010 (bit 19 set)
+    gen.clock(); // 0x7fff0 + 0x20 = 0x80010 (bit 19 set) -> pipeline=2
 
+    // Shift hasn't happened yet due to 2-cycle pipeline
+    assert_eq!(
+        gen.get_shift(),
+        initial,
+        "LFSR should not shift immediately (pipeline phase 0)"
+    );
+
+    gen.clock(); // pipeline=1, latch shift register
+    assert_eq!(
+        gen.get_shift(),
+        initial,
+        "LFSR should not shift yet (pipeline phase 1)"
+    );
+
+    gen.clock(); // pipeline=0, perform actual shift
     assert_ne!(
         gen.get_shift(),
         initial,
-        "LFSR should clock on bit 19 transition"
+        "LFSR should clock after 2-cycle pipeline delay"
     );
 }
 

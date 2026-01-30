@@ -35,6 +35,12 @@ pub struct WaveformGenerator {
     // Runtime State
     pub acc: u32,
     pub shift: u32,
+    /// Latched shift register value during pipeline phase 1
+    shift_latch: u32,
+    /// Pipeline state: 2=detect, 1=phase1 (latch), 0=phase2 (shift)
+    shift_pipeline: i8,
+    /// Latched test bit for noise XOR in shift phase 2
+    test_or_reset: bool,
     msb_rising: bool,
     // Static Data
     wave_ps: &'static [u8; 4096],
@@ -74,6 +80,9 @@ impl WaveformGenerator {
             test: false,
             acc: 0,
             shift: 0,
+            shift_latch: 0,
+            shift_pipeline: 0,
+            test_or_reset: false,
             msb_rising: false,
             wave_ps,
             wave_pst,
@@ -137,25 +146,30 @@ impl WaveformGenerator {
         self.sync = value.get_bit(1);
         self.ring = value.get_bit(2);
         let test = value.get_bit(3);
-        if test {
-            // Test bit set.
-            // The accumulator and the shift register are both cleared.
-            // NB! The shift register is not really cleared immediately. It seems like
-            // the individual bits in the shift register start to fade down towards
-            // zero when test is set. All bits reach zero within approximately
-            // $2000 - $4000 cycles.
-            // This is not modeled. There should fortunately be little audible output
-            // from this peculiar behavior.
-            self.acc = 0;
-            self.shift = 0;
-        } else if self.test {
-            // Test bit cleared.
-            // The accumulator starts counting, and the shift register is reset to
-            // the value 0x7ffff8.
-            // NB! The shift register will not actually be set to this exact value if the
-            // shift register bits have not had time to fade to zero.
-            // This is not modeled.
-            self.shift = 0x007f_fff8;
+        let test_prev = self.test;
+        if test != test_prev {
+            if test {
+                // Test bit set.
+                // The accumulator and the shift register are both cleared.
+                // NB! The shift register is not really cleared immediately. It seems like
+                // the individual bits in the shift register start to fade down towards
+                // zero when test is set. All bits reach zero within approximately
+                // $2000 - $4000 cycles.
+                // This is not modeled. There should fortunately be little audible output
+                // from this peculiar behavior.
+                self.acc = 0;
+                self.shift = 0;
+                // Flush shift pipeline
+                self.shift_pipeline = 0;
+            } else {
+                // Test bit cleared.
+                // The accumulator starts counting, and the shift register is reset to
+                // the value 0x7ffff8.
+                // NB! The shift register will not actually be set to this exact value if the
+                // shift register bits have not had time to fade to zero.
+                // This is not modeled.
+                self.shift = 0x007f_fff8;
+            }
         }
         self.test = test;
     }
@@ -182,19 +196,48 @@ impl WaveformGenerator {
 
     #[inline]
     pub fn clock(&mut self) {
-        // No operation if test bit is set.
-        if !self.test {
+        if self.test {
+            // Latch the test bit value for shift phase 2
+            self.test_or_reset = true;
+        } else {
             let acc_prev = self.acc;
             // Calculate new accumulator value;
             self.acc = (self.acc + self.frequency as u32) & ACC_MASK;
             // Check whether the MSB is set high. This is used for synchronization.
             self.msb_rising = (acc_prev & ACC_MSB_MASK) == 0 && (self.acc & ACC_MSB_MASK) != 0;
-            if (acc_prev & ACC_BIT19_MASK) == 0 && (self.acc & ACC_BIT19_MASK) != 0 {
-                // Shift noise register once for each time accumulator bit 19 is set high.
-                let bit0 = ((self.shift >> 22) ^ (self.shift >> 17)) & 0x01;
-                self.shift = ((self.shift << 1) & SHIFT_MASK) | bit0;
+            // Check if bit 19 transitioned 0->1
+            let bit19_rising = (acc_prev & ACC_BIT19_MASK) == 0 && (self.acc & ACC_BIT19_MASK) != 0;
+            if bit19_rising {
+                // Pipeline: Detect rising bit, then phase 1, then phase 2
+                // Shift is delayed 2 cycles after bit 19 is set high
+                self.shift_pipeline = 2;
+            } else if self.shift_pipeline != 0 {
+                self.shift_pipeline -= 1;
+                match self.shift_pipeline {
+                    0 => {
+                        // Phase 2: perform actual shift using latched value
+                        self.shift_phase2();
+                    }
+                    1 => {
+                        // Phase 1: latch the shift register
+                        self.test_or_reset = false;
+                        self.shift_latch = self.shift;
+                    }
+                    _ => {}
+                }
             }
         }
+    }
+
+    /// Perform the actual LFSR shift using the latched value.
+    /// LFSR feedback: new_bit0 = (bit22 | test_or_reset) XOR bit17
+    #[inline]
+    fn shift_phase2(&mut self) {
+        let bit22 = (self.shift_latch >> 22) & 1;
+        let bit17 = (self.shift_latch >> 17) & 1;
+        let forced_bit22 = bit22 | u32::from(self.test_or_reset);
+        let bit0 = forced_bit22 ^ bit17;
+        self.shift = ((self.shift_latch << 1) & SHIFT_MASK) | bit0;
     }
 
     #[inline]
@@ -269,6 +312,9 @@ impl WaveformGenerator {
         self.test = false;
         self.acc = 0;
         self.shift = 0x007f_fff8;
+        self.shift_latch = 0;
+        self.shift_pipeline = 0;
+        self.test_or_reset = false;
         self.msb_rising = false;
     }
 
