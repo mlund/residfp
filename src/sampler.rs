@@ -204,7 +204,7 @@ impl Sampler {
             }
             self.synth.clock_delta(delta_sample);
             delta -= delta_sample;
-            buffer[(index * interleave) as usize] = self.synth.output();
+            buffer[index * interleave] = self.synth.output();
             index += 1;
             self.update_sample_offset(next_sample_offset);
         }
@@ -283,8 +283,8 @@ impl Sampler {
     ///   and the required filter order is thus lower in this step.
     ///   Laurent Ganier has found the optimal intermediate sampling frequency
     ///   to be (via derivation of sum of two steps):
-    ///     2 * pass_freq + sqrt [ 2 * pass_freq * orig_sample_freq
-    ///       * (dest_sample_freq - 2 * pass_freq) / dest_sample_freq ]
+    ///   2 * pass_freq + sqrt [ 2 * pass_freq * orig_sample_freq
+    ///   * (dest_sample_freq - 2 * pass_freq) / dest_sample_freq ]
     ///
     /// NB! the result of right shifting negative numbers is really
     /// implementation dependent in the C++ standard.

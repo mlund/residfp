@@ -433,12 +433,11 @@ impl Syncable<&'_ mut WaveformGenerator> {
         // A special case occurs when a sync source is synced itself on the same
         // cycle as when its MSB is set high. In this case the destination will
         // not be synced. This has been verified by sampling OSC3.
-        if self.main.is_msb_rising() {
-            if self.sync_dest.sync {
-                if !(self.main.sync && self.sync_source.is_msb_rising()) {
-                    self.sync_dest.set_acc(0);
-                }
-            }
+        if self.main.is_msb_rising()
+            && self.sync_dest.sync
+            && !(self.main.sync && self.sync_source.is_msb_rising())
+        {
+            self.sync_dest.set_acc(0);
         }
     }
 }
