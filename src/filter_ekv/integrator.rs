@@ -165,6 +165,22 @@ impl<'a> Integrator6581<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
+
+    /// Asserts value is within tolerance of expected, with descriptive message.
+    macro_rules! assert_close {
+        ($actual:expr, $expected:expr, $tol:expr, $msg:expr) => {
+            let diff = ($actual - $expected).abs();
+            assert!(
+                diff <= $tol,
+                "{}: expected ~{}, got {} (diff: {})",
+                $msg,
+                $expected,
+                $actual,
+                diff
+            );
+        };
+    }
 
     #[test]
     fn integrator_solves_without_panic() {
@@ -200,5 +216,136 @@ mod tests {
         assert_eq!(integrator.vc, 0);
         assert_eq!(integrator.vx, 0);
         assert_eq!(integrator.n_vddt_vw_2, 0);
+    }
+
+    // =========================================================================
+    // C++ libresidfp comparison tests
+    // Reference values from libresidfp TestFilterSignal.cpp
+    // =========================================================================
+
+    /// Compare integrator step response against C++ reference.
+    ///
+    /// C++ test: Step from silence(28465) to high(45000) at cycle 10
+    /// Vw = dac[1024] = 49663
+    ///
+    /// C++ output (selected cycles):
+    /// cycle 0: output = 4908
+    /// cycle 9: output = 4919
+    /// cycle 10: output = 3757
+    /// cycle 20: output = 2080
+    /// cycle 49: output = 1740
+    #[test]
+    fn compare_cpp_step_response() {
+        let config = FilterModelConfig::new();
+        let mut integrator = Integrator6581::new(&config);
+
+        // C++ uses dac[1024] = 49663
+        let vw = config.get_f0_dac(1024);
+        integrator.set_vw(vw);
+
+        // Allow tolerance for floating point differences
+        const TOL: i32 = 50;
+
+        let silence = 28465i32;
+        let high = 45000i32;
+
+        let mut outputs = Vec::new();
+        for i in 0..50 {
+            let input = if i < 10 { silence } else { high };
+            let output = integrator.solve(input);
+            outputs.push(output);
+        }
+
+        // Compare key points against C++ reference
+        assert_close!(outputs[0], 4908, TOL, "cycle 0");
+        assert_close!(outputs[9], 4919, TOL, "cycle 9");
+        assert_close!(outputs[10], 3757, TOL, "cycle 10 (first after step)");
+        assert_close!(outputs[20], 2080, TOL, "cycle 20");
+        assert_close!(outputs[49], 1740, TOL, "cycle 49");
+    }
+
+    /// Verify cutoff frequency behavior: higher fc = faster response.
+    ///
+    /// NOTE: C++ crashes when starting directly with high input due to assertions.
+    /// We test relative behavior instead: settle from silence, step to high,
+    /// verify higher fc produces faster decay (lower output after same cycles).
+    #[test]
+    fn cutoff_frequency_relative_behavior() {
+        let config = FilterModelConfig::new();
+        let silence = 28465i32;
+        let high = 45000i32;
+
+        let mut outputs = Vec::new();
+
+        for fc in [256, 512, 1024, 2047] {
+            let mut integrator = Integrator6581::new(&config);
+            let vw = config.get_f0_dac(fc);
+            integrator.set_vw(vw);
+
+            // Settle at silence first (like C++ step response test)
+            for _ in 0..20 {
+                integrator.solve(silence);
+            }
+
+            // Step to high and measure after 20 cycles
+            let mut output = 0;
+            for _ in 0..20 {
+                output = integrator.solve(high);
+            }
+            outputs.push((fc, output));
+        }
+
+        // Verify higher fc produces lower output (faster response to step)
+        for i in 1..outputs.len() {
+            let (fc_prev, out_prev) = outputs[i - 1];
+            let (fc_curr, out_curr) = outputs[i];
+            assert!(
+                out_curr < out_prev,
+                "fc={} should produce lower output than fc={}, but got {} vs {}",
+                fc_curr,
+                fc_prev,
+                out_curr,
+                out_prev
+            );
+        }
+    }
+
+    /// Compare sine wave response against C++ reference.
+    ///
+    /// C++ test: Sine wave with amplitude 8000 around silence (28465)
+    /// Vw = dac[512] = 45677
+    ///
+    /// C++ output (selected cycles):
+    /// cycle 0: input=28465, output=5971
+    /// cycle 5: input=36465, output=5163
+    /// cycle 10: input=28465, output=4859
+    /// cycle 50: input=28465, output=4282
+    #[test]
+    fn compare_cpp_sine_response() {
+        use core::f64::consts::PI;
+
+        let config = FilterModelConfig::new();
+        let mut integrator = Integrator6581::new(&config);
+
+        let vw = config.get_f0_dac(512);
+        integrator.set_vw(vw);
+
+        const TOL: i32 = 50;
+        let silence = 28465i32;
+        let amplitude = 8000i32;
+
+        let mut outputs = Vec::new();
+        for i in 0..100 {
+            let phase = i as f64 * 2.0 * PI / 20.0;
+            let input = silence + (amplitude as f64 * phase.sin()) as i32;
+            let output = integrator.solve(input);
+            outputs.push(output);
+        }
+
+        // Compare key points against C++ reference
+        assert_close!(outputs[0], 5971, TOL, "cycle 0");
+        assert_close!(outputs[5], 5163, TOL, "cycle 5");
+        assert_close!(outputs[10], 4859, TOL, "cycle 10");
+        assert_close!(outputs[50], 4282, TOL, "cycle 50");
     }
 }
