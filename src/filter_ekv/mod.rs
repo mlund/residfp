@@ -1,0 +1,493 @@
+// This file is part of resid-rs.
+// Copyright (c) 2017-2019 Sebastian Jastrzebski <sebby2k@gmail.com>. All rights reserved.
+// Portions (c) 2004 Dag Lem <resid@nimrod.no>
+// Licensed under the GPLv3. See LICENSE file in the project root for full license text.
+
+//! EKV transistor model filter for 6581.
+//!
+//! This module implements a physics-based MOS transistor model for accurate
+//! emulation of the 6581 SID filter. The model uses the EKV (Enz-Krummenacher-
+//! Vittoz) equations which provide smooth transitions between subthreshold,
+//! triode, and saturation modes.
+//!
+//! The filter consists of two integrator stages (HP and BP) connected in a
+//! state-variable filter topology.
+//!
+//! Memory footprint: ~388KB for lookup tables (generated at runtime).
+
+mod config;
+mod integrator;
+mod opamp;
+
+use alloc::boxed::Box;
+
+pub use self::config::FilterModelConfig;
+use self::integrator::Integrator6581;
+
+const MIXER_DC_6581: i32 = (-0xfff * 0xff / 18) >> 7;
+
+/// Physics-based EKV filter for 6581.
+///
+/// Uses two integrators in a state-variable filter topology with lookup tables
+/// for accurate transistor modeling.
+pub struct Filter6581Ekv {
+    /// Filter model configuration and lookup tables.
+    config: Box<FilterModelConfig>,
+
+    /// Highpass integrator stage.
+    hp_integrator: Integrator6581<'static>,
+
+    /// Bandpass integrator stage.
+    bp_integrator: Integrator6581<'static>,
+
+    /// Highpass output voltage.
+    vhp: i32,
+
+    /// Bandpass output voltage.
+    vbp: i32,
+
+    /// Lowpass output voltage.
+    vlp: i32,
+
+    /// Non-filtered output voltage.
+    vnf: i32,
+
+    // Configuration
+    enabled: bool,
+    fc: u16,
+    filt: u8,
+    res: u8,
+
+    // Mode
+    voice3_off: bool,
+    hp_bp_lp: u8,
+    vol: u8,
+
+    // Mixer DC offset
+    mixer_dc: i32,
+}
+
+// Manual implementation because Integrator6581 borrows from config
+impl Clone for Filter6581Ekv {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl Filter6581Ekv {
+    /// Creates a new EKV filter with default configuration.
+    pub fn new() -> Self {
+        // Create config in a Box so it has a stable address
+        let config = Box::new(FilterModelConfig::new());
+
+        // SAFETY: We're creating a self-referential struct. The config lives
+        // in a Box which won't move, and the integrators borrow from it.
+        // The 'static lifetime is a lie, but we maintain the invariant that
+        // config outlives the integrators.
+        let config_ref: &'static FilterModelConfig =
+            unsafe { &*(config.as_ref() as *const FilterModelConfig) };
+
+        let hp_integrator = Integrator6581::new(config_ref);
+        let bp_integrator = Integrator6581::new(config_ref);
+
+        let mut filter = Filter6581Ekv {
+            config,
+            hp_integrator,
+            bp_integrator,
+            vhp: 0,
+            vbp: 0,
+            vlp: 0,
+            vnf: 0,
+            enabled: true,
+            fc: 0,
+            filt: 0,
+            res: 0,
+            voice3_off: false,
+            hp_bp_lp: 0,
+            vol: 0,
+            mixer_dc: MIXER_DC_6581,
+        };
+        filter.update_cutoff();
+        filter
+    }
+
+    /// Sets the filter range for tuning to match specific SID chips.
+    ///
+    /// Range: 0.0 to 1.0
+    /// - 0.0: Lowest cutoff frequencies
+    /// - 0.5: Default (20e-6 uCox)
+    /// - 1.0: Highest cutoff frequencies
+    pub fn set_filter_range(&mut self, adjustment: f64) {
+        self.config.set_filter_range(adjustment);
+    }
+
+    /// Set filter curve parameter (API compatibility with simplified filter).
+    ///
+    /// For EKV filter, this maps to filter range adjustment.
+    pub fn set_filter_curve(&mut self, curve: f64) {
+        // Map curve 0-1 to filter range 0-1
+        // curve 0.5 (default) -> range ~0.5 (default uCox)
+        self.set_filter_range(curve);
+    }
+
+    /// Get current filter curve parameter.
+    pub fn get_filter_curve(&self) -> f64 {
+        // Return a nominal value since we can't easily reverse the uCox calculation
+        0.5
+    }
+
+    pub fn get_fc_hi(&self) -> u8 {
+        (self.fc >> 3) as u8
+    }
+
+    pub fn get_fc_lo(&self) -> u8 {
+        (self.fc & 0x007) as u8
+    }
+
+    pub fn get_mode_vol(&self) -> u8 {
+        let value = if self.voice3_off { 0x80 } else { 0 };
+        value | (self.hp_bp_lp << 4) | (self.vol & 0x0f)
+    }
+
+    pub fn get_res_filt(&self) -> u8 {
+        (self.res << 4) | (self.filt & 0x0f)
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    pub fn set_fc_hi(&mut self, value: u8) {
+        self.fc = ((value as u16) << 3) & 0x7f8 | self.fc & 0x007;
+        self.update_cutoff();
+    }
+
+    pub fn set_fc_lo(&mut self, value: u8) {
+        self.fc = self.fc & 0x7f8 | (value as u16) & 0x007;
+        self.update_cutoff();
+    }
+
+    pub fn set_mode_vol(&mut self, value: u8) {
+        self.voice3_off = value & 0x80 != 0;
+        self.hp_bp_lp = (value >> 4) & 0x07;
+        self.vol = value & 0x0f;
+    }
+
+    pub fn set_res_filt(&mut self, value: u8) {
+        self.res = (value >> 4) & 0x0f;
+        self.filt = value & 0x0f;
+    }
+
+    /// Updates the cutoff frequency by setting the Vw voltage on both integrators.
+    fn update_cutoff(&mut self) {
+        let vw = self.config.get_f0_dac(self.fc as usize);
+        self.hp_integrator.set_vw(vw);
+        self.bp_integrator.set_vw(vw);
+    }
+
+    /// Clocks the filter for one cycle.
+    #[inline]
+    pub fn clock(&mut self, mut voice1: i32, mut voice2: i32, mut voice3: i32, mut ext_in: i32) {
+        // Scale each voice down from 20 to 13 bits
+        voice1 >>= 7;
+        voice2 >>= 7;
+        voice3 = if self.voice3_off && self.filt & 0x04 == 0 {
+            0
+        } else {
+            voice3 >> 7
+        };
+        ext_in >>= 7;
+
+        // Bypass filter if disabled
+        if !self.enabled {
+            self.vnf = voice1 + voice2 + voice3 + ext_in;
+            self.vhp = 0;
+            self.vbp = 0;
+            self.vlp = 0;
+            return;
+        }
+
+        // Route voices into or around filter
+        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+
+        // Solve the two integrator stages
+        self.solve_integrators(vi);
+    }
+
+    /// Clocks the filter for multiple cycles.
+    #[inline]
+    pub fn clock_delta(
+        &mut self,
+        mut delta: u32,
+        mut voice1: i32,
+        mut voice2: i32,
+        mut voice3: i32,
+        mut ext_in: i32,
+    ) {
+        // Scale each voice down from 20 to 13 bits
+        voice1 >>= 7;
+        voice2 >>= 7;
+        voice3 = if self.voice3_off && self.filt & 0x04 == 0 {
+            0
+        } else {
+            voice3 >> 7
+        };
+        ext_in >>= 7;
+
+        // Bypass filter if disabled
+        if !self.enabled {
+            self.vnf = voice1 + voice2 + voice3 + ext_in;
+            self.vhp = 0;
+            self.vbp = 0;
+            self.vlp = 0;
+            return;
+        }
+
+        // Route voices into or around filter
+        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+
+        // Clock the filter for each cycle
+        // The EKV model is accurate per-cycle, so we can't skip cycles
+        while delta > 0 {
+            self.solve_integrators(vi);
+            delta -= 1;
+        }
+    }
+
+    /// Routes voices into or around the filter based on filt register.
+    #[inline]
+    fn route_voices(&mut self, voice1: i32, voice2: i32, voice3: i32, ext_in: i32) -> i32 {
+        match self.filt {
+            0x0 => {
+                self.vnf = voice1 + voice2 + voice3 + ext_in;
+                0
+            }
+            0x1 => {
+                self.vnf = voice2 + voice3 + ext_in;
+                voice1
+            }
+            0x2 => {
+                self.vnf = voice1 + voice3 + ext_in;
+                voice2
+            }
+            0x3 => {
+                self.vnf = voice3 + ext_in;
+                voice1 + voice2
+            }
+            0x4 => {
+                self.vnf = voice1 + voice2 + ext_in;
+                voice3
+            }
+            0x5 => {
+                self.vnf = voice2 + ext_in;
+                voice1 + voice3
+            }
+            0x6 => {
+                self.vnf = voice1 + ext_in;
+                voice2 + voice3
+            }
+            0x7 => {
+                self.vnf = ext_in;
+                voice1 + voice2 + voice3
+            }
+            0x8 => {
+                self.vnf = voice1 + voice2 + voice3;
+                ext_in
+            }
+            0x9 => {
+                self.vnf = voice2 + voice3;
+                voice1 + ext_in
+            }
+            0xa => {
+                self.vnf = voice1 + voice3;
+                voice2 + ext_in
+            }
+            0xb => {
+                self.vnf = voice3;
+                voice1 + voice2 + ext_in
+            }
+            0xc => {
+                self.vnf = voice1 + voice2;
+                voice3 + ext_in
+            }
+            0xd => {
+                self.vnf = voice2;
+                voice1 + voice3 + ext_in
+            }
+            0xe => {
+                self.vnf = voice1;
+                voice2 + voice3 + ext_in
+            }
+            0xf => {
+                self.vnf = 0;
+                voice1 + voice2 + voice3 + ext_in
+            }
+            _ => {
+                self.vnf = voice1 + voice2 + voice3 + ext_in;
+                0
+            }
+        }
+    }
+
+    /// Solves the two integrator stages.
+    ///
+    /// State-variable filter topology:
+    /// - HP integrator: Vbp = solve(Vhp)
+    /// - BP integrator: Vlp = solve(Vbp)
+    /// - Summer: Vhp = Vbp/Q - Vlp - Vi
+    #[inline]
+    fn solve_integrators(&mut self, vi: i32) {
+        // Solve HP integrator: input is Vhp, output is Vbp
+        self.vbp = self.hp_integrator.solve(self.vhp);
+
+        // Solve BP integrator: input is Vbp, output is Vlp
+        self.vlp = self.bp_integrator.solve(self.vbp);
+
+        // Summer: compute new Vhp
+        // Vhp = Vbp/Q - Vlp - Vi
+        // Q is controlled by resonance: ~res/8 for 6581
+        // Higher res = higher Q = more resonance
+        let q_div = self.get_q_divisor();
+        self.vhp = ((self.vbp * q_div) >> 10) - self.vlp - vi;
+    }
+
+    /// Returns the Q divisor based on resonance setting.
+    ///
+    /// For 6581: 1/Q ~ ~res/8
+    #[inline]
+    fn get_q_divisor(&self) -> i32 {
+        // Inverted resonance bits give 1/Q
+        let inv_res = (!self.res & 0x0f) as i32;
+        // Scale to 1024 fixed-point: 1024 * (inv_res/8) = 128 * inv_res
+        // Add 1 to avoid division by zero when res=15
+        (inv_res * 128) + 1
+    }
+
+    /// Returns the filter output.
+    #[inline]
+    pub fn output(&self) -> i32 {
+        if !self.enabled {
+            (self.vnf + self.mixer_dc) * self.vol as i32
+        } else {
+            // Mix highpass, bandpass, and lowpass outputs
+            let vf = match self.hp_bp_lp {
+                0x0 => 0,
+                0x1 => self.vlp,
+                0x2 => self.vbp,
+                0x3 => self.vlp + self.vbp,
+                0x4 => self.vhp,
+                0x5 => self.vlp + self.vhp,
+                0x6 => self.vbp + self.vhp,
+                0x7 => self.vlp + self.vbp + self.vhp,
+                _ => 0,
+            };
+            // Sum non-filtered and filtered output, multiply by volume
+            (self.vnf + vf + self.mixer_dc) * self.vol as i32
+        }
+    }
+
+    /// Resets the filter state.
+    pub fn reset(&mut self) {
+        self.fc = 0;
+        self.filt = 0;
+        self.res = 0;
+        self.voice3_off = false;
+        self.hp_bp_lp = 0;
+        self.vol = 0;
+        self.vhp = 0;
+        self.vbp = 0;
+        self.vlp = 0;
+        self.vnf = 0;
+        self.hp_integrator.reset();
+        self.bp_integrator.reset();
+        self.update_cutoff();
+    }
+}
+
+impl Default for Filter6581Ekv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_creates_without_panic() {
+        let _filter = Filter6581Ekv::new();
+    }
+
+    #[test]
+    fn filter_clock_produces_output() {
+        let mut filter = Filter6581Ekv::new();
+
+        // Enable all voices through filter
+        filter.set_res_filt(0x0f);
+        // Enable lowpass output
+        filter.set_mode_vol(0x1f);
+
+        // Clock with some input
+        for _ in 0..1000 {
+            filter.clock(0x7fff << 7, 0, 0, 0);
+        }
+
+        // Should produce some output
+        let output = filter.output();
+        assert!(output != 0, "Filter should produce non-zero output");
+    }
+
+    #[test]
+    fn filter_reset_clears_state() {
+        let mut filter = Filter6581Ekv::new();
+
+        filter.set_fc_hi(0xff);
+        filter.set_res_filt(0xff);
+        filter.set_mode_vol(0xff);
+
+        for _ in 0..100 {
+            filter.clock(0x7fff << 7, 0x7fff << 7, 0x7fff << 7, 0);
+        }
+
+        filter.reset();
+
+        assert_eq!(filter.fc, 0);
+        assert_eq!(filter.filt, 0);
+        assert_eq!(filter.res, 0);
+        assert_eq!(filter.vhp, 0);
+        assert_eq!(filter.vbp, 0);
+        assert_eq!(filter.vlp, 0);
+    }
+
+    #[test]
+    fn filter_disabled_bypasses() {
+        let mut filter = Filter6581Ekv::new();
+
+        filter.set_enabled(false);
+        filter.set_res_filt(0x0f);
+        filter.set_mode_vol(0x1f);
+
+        filter.clock(0x7fff << 7, 0, 0, 0);
+
+        // When disabled, vhp/vbp/vlp should be zero
+        assert_eq!(filter.vhp, 0);
+        assert_eq!(filter.vbp, 0);
+        assert_eq!(filter.vlp, 0);
+    }
+
+    #[test]
+    fn filter_voice_routing() {
+        let mut filter = Filter6581Ekv::new();
+
+        // No voices through filter
+        filter.set_res_filt(0x00);
+        filter.clock(1 << 7, 2 << 7, 3 << 7, 4 << 7);
+        assert_eq!(filter.vnf, 1 + 2 + 3 + 4);
+
+        // Voice 1 through filter
+        filter.set_res_filt(0x01);
+        filter.clock(1 << 7, 2 << 7, 3 << 7, 4 << 7);
+        assert_eq!(filter.vnf, 2 + 3 + 4);
+    }
+}

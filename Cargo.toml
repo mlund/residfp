@@ -17,6 +17,8 @@ name = "resid"
 default = ["std"]
 std = ["alloc"]
 alloc = []
+# Physics-based EKV transistor model for accurate 6581 filter emulation (~400KB tables)
+ekv-filter = ["alloc"]
 
 [dependencies]
 bit_field = "0.10"

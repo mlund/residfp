@@ -15,6 +15,8 @@ mod data;
 pub mod envelope;
 pub mod external_filter;
 pub mod filter;
+#[cfg(feature = "ekv-filter")]
+pub mod filter_ekv;
 pub mod sampler;
 mod sid;
 pub mod spline;
