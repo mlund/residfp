@@ -10,6 +10,7 @@ use alloc::boxed::Box;
 use super::dac::build_dac_table;
 use super::external_filter::ExternalFilter;
 use super::filter::Filter;
+pub use super::filter::FilterBehavior;
 #[cfg(feature = "ekv-filter")]
 use super::filter_ekv::Filter6581Ekv;
 use super::sid::reg;
@@ -20,139 +21,6 @@ use super::ChipModel;
 const OUTPUT_RANGE: u32 = 1 << 16;
 const OUTPUT_HALF: i32 = (OUTPUT_RANGE >> 1) as i32;
 const SAMPLES_PER_OUTPUT: u32 = ((4095 * 255) >> 7) * 3 * 15 * 2 / OUTPUT_RANGE;
-
-/// Common interface for SID filter implementations.
-///
-/// Both the standard spline-based filter and the EKV transistor model
-/// implement this trait, enabling runtime selection between them.
-pub trait FilterBehavior {
-    /// Clock the filter for one cycle with voice and external inputs.
-    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32);
-    /// Clock the filter for multiple cycles.
-    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32);
-    /// Get the current filter output value.
-    fn output(&self) -> i32;
-    /// Reset filter state to initial values.
-    fn reset(&mut self);
-    /// Enable or disable the filter (bypasses when disabled).
-    fn set_enabled(&mut self, enabled: bool);
-    /// Set filter curve/range for tuning to match specific SID chips.
-    fn set_filter_curve(&mut self, curve: f64);
-    /// Get current filter curve parameter.
-    fn get_filter_curve(&self) -> f64;
-    // Register access
-    fn get_fc_lo(&self) -> u8;
-    fn get_fc_hi(&self) -> u8;
-    fn get_res_filt(&self) -> u8;
-    fn get_mode_vol(&self) -> u8;
-    fn set_fc_lo(&mut self, value: u8);
-    fn set_fc_hi(&mut self, value: u8);
-    fn set_res_filt(&mut self, value: u8);
-    fn set_mode_vol(&mut self, value: u8);
-}
-
-impl FilterBehavior for Filter {
-    #[inline]
-    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32) {
-        Filter::clock(self, v1, v2, v3, ext);
-    }
-    #[inline]
-    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32) {
-        Filter::clock_delta(self, delta, v1, v2, v3, ext);
-    }
-    #[inline]
-    fn output(&self) -> i32 {
-        Filter::output(self)
-    }
-    fn reset(&mut self) {
-        Filter::reset(self);
-    }
-    fn set_enabled(&mut self, enabled: bool) {
-        Filter::set_enabled(self, enabled);
-    }
-    fn set_filter_curve(&mut self, curve: f64) {
-        Filter::set_filter_curve(self, curve);
-    }
-    fn get_filter_curve(&self) -> f64 {
-        Filter::get_filter_curve(self)
-    }
-    fn get_fc_lo(&self) -> u8 {
-        Filter::get_fc_lo(self)
-    }
-    fn get_fc_hi(&self) -> u8 {
-        Filter::get_fc_hi(self)
-    }
-    fn get_res_filt(&self) -> u8 {
-        Filter::get_res_filt(self)
-    }
-    fn get_mode_vol(&self) -> u8 {
-        Filter::get_mode_vol(self)
-    }
-    fn set_fc_lo(&mut self, value: u8) {
-        Filter::set_fc_lo(self, value);
-    }
-    fn set_fc_hi(&mut self, value: u8) {
-        Filter::set_fc_hi(self, value);
-    }
-    fn set_res_filt(&mut self, value: u8) {
-        Filter::set_res_filt(self, value);
-    }
-    fn set_mode_vol(&mut self, value: u8) {
-        Filter::set_mode_vol(self, value);
-    }
-}
-
-#[cfg(feature = "ekv-filter")]
-impl FilterBehavior for Filter6581Ekv {
-    #[inline]
-    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32) {
-        Filter6581Ekv::clock(self, v1, v2, v3, ext);
-    }
-    #[inline]
-    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32) {
-        Filter6581Ekv::clock_delta(self, delta, v1, v2, v3, ext);
-    }
-    #[inline]
-    fn output(&self) -> i32 {
-        Filter6581Ekv::output(self)
-    }
-    fn reset(&mut self) {
-        Filter6581Ekv::reset(self);
-    }
-    fn set_enabled(&mut self, enabled: bool) {
-        Filter6581Ekv::set_enabled(self, enabled);
-    }
-    fn set_filter_curve(&mut self, curve: f64) {
-        Filter6581Ekv::set_filter_curve(self, curve);
-    }
-    fn get_filter_curve(&self) -> f64 {
-        Filter6581Ekv::get_filter_curve(self)
-    }
-    fn get_fc_lo(&self) -> u8 {
-        Filter6581Ekv::get_fc_lo(self)
-    }
-    fn get_fc_hi(&self) -> u8 {
-        Filter6581Ekv::get_fc_hi(self)
-    }
-    fn get_res_filt(&self) -> u8 {
-        Filter6581Ekv::get_res_filt(self)
-    }
-    fn get_mode_vol(&self) -> u8 {
-        Filter6581Ekv::get_mode_vol(self)
-    }
-    fn set_fc_lo(&mut self, value: u8) {
-        Filter6581Ekv::set_fc_lo(self, value);
-    }
-    fn set_fc_hi(&mut self, value: u8) {
-        Filter6581Ekv::set_fc_hi(self, value);
-    }
-    fn set_res_filt(&mut self, value: u8) {
-        Filter6581Ekv::set_res_filt(self, value);
-    }
-    fn set_mode_vol(&mut self, value: u8) {
-        Filter6581Ekv::set_mode_vol(self, value);
-    }
-}
 
 /// Runtime-selectable filter implementation.
 ///

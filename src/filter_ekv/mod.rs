@@ -23,6 +23,7 @@ use alloc::boxed::Box;
 
 pub use self::config::FilterModelConfig;
 use self::integrator::Integrator6581;
+use super::filter::FilterBehavior;
 
 const MIXER_DC_6581: i32 = (-0xfff * 0xff / 18) >> 7;
 
@@ -112,61 +113,14 @@ impl Filter6581Ekv {
         self.config.set_filter_range(adjustment);
     }
 
-    /// Set filter curve parameter (API compatibility with simplified filter).
-    ///
-    /// For EKV filter, this maps to filter range adjustment.
-    pub fn set_filter_curve(&mut self, curve: f64) {
-        // Map curve 0-1 to filter range 0-1
-        // curve 0.5 (default) -> range ~0.5 (default uCox)
-        self.set_filter_range(curve);
+    /// Returns internal filter state [vhp, vbp, vlp, vnf] for filter switching.
+    pub fn get_state(&self) -> [i32; 4] {
+        [self.vhp, self.vbp, self.vlp, self.vnf]
     }
 
-    /// Get current filter curve parameter.
-    pub fn get_filter_curve(&self) -> f64 {
-        // Return a nominal value since we can't easily reverse the uCox calculation
-        0.5
-    }
-
-    pub fn get_fc_hi(&self) -> u8 {
-        (self.fc >> 3) as u8
-    }
-
-    pub fn get_fc_lo(&self) -> u8 {
-        (self.fc & 0x007) as u8
-    }
-
-    pub fn get_mode_vol(&self) -> u8 {
-        let value = if self.voice3_off { 0x80 } else { 0 };
-        value | (self.hp_bp_lp << 4) | (self.vol & 0x0f)
-    }
-
-    pub fn get_res_filt(&self) -> u8 {
-        (self.res << 4) | (self.filt & 0x0f)
-    }
-
-    pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-    }
-
-    pub fn set_fc_hi(&mut self, value: u8) {
-        self.fc = ((value as u16) << 3) & 0x7f8 | self.fc & 0x007;
-        self.update_cutoff();
-    }
-
-    pub fn set_fc_lo(&mut self, value: u8) {
-        self.fc = self.fc & 0x7f8 | (value as u16) & 0x007;
-        self.update_cutoff();
-    }
-
-    pub fn set_mode_vol(&mut self, value: u8) {
-        self.voice3_off = value & 0x80 != 0;
-        self.hp_bp_lp = (value >> 4) & 0x07;
-        self.vol = value & 0x0f;
-    }
-
-    pub fn set_res_filt(&mut self, value: u8) {
-        self.res = (value >> 4) & 0x0f;
-        self.filt = value & 0x0f;
+    /// Sets internal filter state from [vhp, vbp, vlp, vnf] for filter switching.
+    pub fn set_state(&mut self, state: [i32; 4]) {
+        [self.vhp, self.vbp, self.vlp, self.vnf] = state;
     }
 
     /// Updates the cutoff frequency by setting the Vw voltage on both integrators.
@@ -174,75 +128,6 @@ impl Filter6581Ekv {
         let vw = self.config.get_f0_dac(self.fc as usize);
         self.hp_integrator.set_vw(vw);
         self.bp_integrator.set_vw(vw);
-    }
-
-    /// Clocks the filter for one cycle.
-    #[inline]
-    pub fn clock(&mut self, mut voice1: i32, mut voice2: i32, mut voice3: i32, mut ext_in: i32) {
-        // Scale each voice down from 20 to 13 bits
-        voice1 >>= 7;
-        voice2 >>= 7;
-        voice3 = if self.voice3_off && self.filt & 0x04 == 0 {
-            0
-        } else {
-            voice3 >> 7
-        };
-        ext_in >>= 7;
-
-        // Bypass filter if disabled
-        if !self.enabled {
-            self.vnf = voice1 + voice2 + voice3 + ext_in;
-            self.vhp = 0;
-            self.vbp = 0;
-            self.vlp = 0;
-            return;
-        }
-
-        // Route voices into or around filter
-        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
-
-        // Solve the two integrator stages
-        self.solve_integrators(vi);
-    }
-
-    /// Clocks the filter for multiple cycles.
-    #[inline]
-    pub fn clock_delta(
-        &mut self,
-        mut delta: u32,
-        mut voice1: i32,
-        mut voice2: i32,
-        mut voice3: i32,
-        mut ext_in: i32,
-    ) {
-        // Scale each voice down from 20 to 13 bits
-        voice1 >>= 7;
-        voice2 >>= 7;
-        voice3 = if self.voice3_off && self.filt & 0x04 == 0 {
-            0
-        } else {
-            voice3 >> 7
-        };
-        ext_in >>= 7;
-
-        // Bypass filter if disabled
-        if !self.enabled {
-            self.vnf = voice1 + voice2 + voice3 + ext_in;
-            self.vhp = 0;
-            self.vbp = 0;
-            self.vlp = 0;
-            return;
-        }
-
-        // Route voices into or around filter
-        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
-
-        // Clock the filter for each cycle
-        // The EKV model is accurate per-cycle, so we can't skip cycles
-        while delta > 0 {
-            self.solve_integrators(vi);
-            delta -= 1;
-        }
     }
 
     /// Routes voices into or around the filter based on filt register.
@@ -353,10 +238,78 @@ impl Filter6581Ekv {
         // Add 1 to avoid division by zero when res=15
         (inv_res * 128) + 1
     }
+}
 
-    /// Returns the filter output.
+impl FilterBehavior for Filter6581Ekv {
     #[inline]
-    pub fn output(&self) -> i32 {
+    fn clock(&mut self, mut voice1: i32, mut voice2: i32, mut voice3: i32, mut ext_in: i32) {
+        // Scale each voice down from 20 to 13 bits
+        voice1 >>= 7;
+        voice2 >>= 7;
+        voice3 = if self.voice3_off && self.filt & 0x04 == 0 {
+            0
+        } else {
+            voice3 >> 7
+        };
+        ext_in >>= 7;
+
+        // Bypass filter if disabled
+        if !self.enabled {
+            self.vnf = voice1 + voice2 + voice3 + ext_in;
+            self.vhp = 0;
+            self.vbp = 0;
+            self.vlp = 0;
+            return;
+        }
+
+        // Route voices into or around filter
+        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+
+        // Solve the two integrator stages
+        self.solve_integrators(vi);
+    }
+
+    #[inline]
+    fn clock_delta(
+        &mut self,
+        mut delta: u32,
+        mut voice1: i32,
+        mut voice2: i32,
+        mut voice3: i32,
+        mut ext_in: i32,
+    ) {
+        // Scale each voice down from 20 to 13 bits
+        voice1 >>= 7;
+        voice2 >>= 7;
+        voice3 = if self.voice3_off && self.filt & 0x04 == 0 {
+            0
+        } else {
+            voice3 >> 7
+        };
+        ext_in >>= 7;
+
+        // Bypass filter if disabled
+        if !self.enabled {
+            self.vnf = voice1 + voice2 + voice3 + ext_in;
+            self.vhp = 0;
+            self.vbp = 0;
+            self.vlp = 0;
+            return;
+        }
+
+        // Route voices into or around filter
+        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+
+        // Clock the filter for each cycle
+        // The EKV model is accurate per-cycle, so we can't skip cycles
+        while delta > 0 {
+            self.solve_integrators(vi);
+            delta -= 1;
+        }
+    }
+
+    #[inline]
+    fn output(&self) -> i32 {
         if !self.enabled {
             (self.vnf + self.mixer_dc) * self.vol as i32
         } else {
@@ -377,18 +330,7 @@ impl Filter6581Ekv {
         }
     }
 
-    /// Returns internal filter state [vhp, vbp, vlp, vnf] for filter switching.
-    pub fn get_state(&self) -> [i32; 4] {
-        [self.vhp, self.vbp, self.vlp, self.vnf]
-    }
-
-    /// Sets internal filter state from [vhp, vbp, vlp, vnf] for filter switching.
-    pub fn set_state(&mut self, state: [i32; 4]) {
-        [self.vhp, self.vbp, self.vlp, self.vnf] = state;
-    }
-
-    /// Resets the filter state.
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.fc = 0;
         self.filt = 0;
         self.res = 0;
@@ -402,6 +344,62 @@ impl Filter6581Ekv {
         self.hp_integrator.reset();
         self.bp_integrator.reset();
         self.update_cutoff();
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    /// Set filter curve parameter (API compatibility with simplified filter).
+    ///
+    /// For EKV filter, this maps to filter range adjustment.
+    fn set_filter_curve(&mut self, curve: f64) {
+        // Map curve 0-1 to filter range 0-1
+        // curve 0.5 (default) -> range ~0.5 (default uCox)
+        self.set_filter_range(curve);
+    }
+
+    fn get_filter_curve(&self) -> f64 {
+        // Return a nominal value since we can't easily reverse the uCox calculation
+        0.5
+    }
+
+    fn get_fc_hi(&self) -> u8 {
+        (self.fc >> 3) as u8
+    }
+
+    fn get_fc_lo(&self) -> u8 {
+        (self.fc & 0x007) as u8
+    }
+
+    fn get_mode_vol(&self) -> u8 {
+        let value = if self.voice3_off { 0x80 } else { 0 };
+        value | (self.hp_bp_lp << 4) | (self.vol & 0x0f)
+    }
+
+    fn get_res_filt(&self) -> u8 {
+        (self.res << 4) | (self.filt & 0x0f)
+    }
+
+    fn set_fc_hi(&mut self, value: u8) {
+        self.fc = ((value as u16) << 3) & 0x7f8 | self.fc & 0x007;
+        self.update_cutoff();
+    }
+
+    fn set_fc_lo(&mut self, value: u8) {
+        self.fc = self.fc & 0x7f8 | (value as u16) & 0x007;
+        self.update_cutoff();
+    }
+
+    fn set_mode_vol(&mut self, value: u8) {
+        self.voice3_off = value & 0x80 != 0;
+        self.hp_bp_lp = (value >> 4) & 0x07;
+        self.vol = value & 0x0f;
+    }
+
+    fn set_res_filt(&mut self, value: u8) {
+        self.res = (value >> 4) & 0x0f;
+        self.filt = value & 0x0f;
     }
 }
 
