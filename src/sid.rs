@@ -8,8 +8,10 @@ use super::sampler::{Sampler, SamplingMethod};
 use super::synth::{FilterBehavior, Synth};
 use super::{ChipModel, SamplingError};
 
+use super::clock;
+
 /// Default clock frequency: PAL C64 (~985 kHz)
-const DEFAULT_CLOCK_FREQ: u32 = 985_248;
+const DEFAULT_CLOCK_FREQ: u32 = clock::PAL;
 /// Default sample rate: CD quality (44.1 kHz)
 const DEFAULT_SAMPLE_FREQ: u32 = 44100;
 /// Bus value time-to-live in clock cycles (~8ms decay)
@@ -47,26 +49,62 @@ pub mod reg {
     pub const ENV3: u8 = 0x1c;
 }
 
-#[derive(Debug)]
+/// Complete SID chip state for save/restore functionality.
+///
+/// Contains all register values and internal state needed to exactly
+/// reproduce the SID's behavior at a given point in time.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct State {
-    // Sid
+    /// All 32 SID registers ($D400-$D41F).
     pub sid_register: [u8; 32],
+    /// Last value written to the data bus.
     pub bus_value: u8,
+    /// Cycles until bus value decays to zero.
     pub bus_value_ttl: u32,
+    /// External audio input level.
     pub ext_in: i32,
-    // Wave
+    /// Oscillator accumulators (24-bit, one per voice).
     pub accumulator: [u32; 3],
+    /// Noise LFSR shift registers (23-bit, one per voice).
     pub shift_register: [u32; 3],
-    // Envelope
+    /// Envelope generator states (0=Attack, 1=DecaySustain, 2=Release).
     pub envelope_state: [u8; 3],
+    /// Current envelope output levels (0-255).
     pub envelope_counter: [u8; 3],
+    /// Exponential counter values for envelope curve shaping.
     pub exponential_counter: [u8; 3],
+    /// Exponential counter period for current envelope level.
     pub exponential_counter_period: [u8; 3],
+    /// Flags indicating envelope is held at zero.
     pub hold_zero: [u8; 3],
+    /// Rate counters for envelope timing.
     pub rate_counter: [u16; 3],
+    /// Rate counter periods (from ADSR settings).
     pub rate_counter_period: [u16; 3],
 }
 
+/// MOS 6581/8580 SID chip emulator.
+///
+/// The SID (Sound Interface Device) is the legendary sound chip used in the
+/// Commodore 64. This emulator accurately reproduces its three voices with
+/// waveform generators, envelope generators, and the distinctive analog filter.
+///
+/// # Example
+/// ```ignore
+/// use residfp::{Sid, ChipModel, SamplingMethod, clock};
+///
+/// let mut sid = Sid::new(ChipModel::Mos6581);
+/// sid.set_sampling_parameters(SamplingMethod::Resample, clock::PAL, 48000)?;
+///
+/// // Write to SID registers
+/// sid.write(0x00, 0x00);  // Voice 1 frequency low
+/// sid.write(0x01, 0x10);  // Voice 1 frequency high
+/// sid.write(0x04, 0x11);  // Voice 1 control: gate + triangle
+///
+/// // Generate audio samples
+/// let mut buffer = [0i16; 1024];
+/// let (samples, remaining) = sid.sample(20000, &mut buffer, 1);
+/// ```
 #[derive(Clone)]
 pub struct Sid {
     // Functional Units

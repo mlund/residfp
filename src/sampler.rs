@@ -93,14 +93,24 @@ pub fn soft_clip(x: i32) -> i16 {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+/// Audio sampling/resampling method.
+///
+/// Controls how SID output is converted to the target sample rate.
+/// Methods requiring heap allocation are gated behind the `alloc` feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum SamplingMethod {
+    /// Simple decimation - fastest but lowest quality.
+    #[default]
     Fast,
+    /// Linear interpolation between samples.
     Interpolate,
+    /// High-quality Kaiser-windowed sinc resampling (requires `alloc`).
     #[cfg(feature = "alloc")]
     Resample,
+    /// Faster sinc resampling with larger lookup tables (requires `alloc`).
     #[cfg(feature = "alloc")]
     ResampleFast,
+    /// Two-pass sinc resampling for efficiency at high ratios (requires `alloc`).
     #[cfg(feature = "alloc")]
     ResampleTwoPass,
 }

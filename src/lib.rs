@@ -24,14 +24,30 @@ pub mod synth;
 pub mod voice;
 pub mod wave;
 
-#[derive(Clone, Copy)]
+/// SID chip model selection.
+///
+/// The MOS 6581 was the original SID chip used in early C64s, featuring
+/// a distinctive filter with analog imperfections. The MOS 8580 was a
+/// later revision with a cleaner, more linear filter response.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ChipModel {
+    /// Original SID chip (1982) with characteristic analog filter quirks.
+    #[default]
     Mos6581,
+    /// Revised SID chip (1987) with cleaner, more linear filter.
     Mos8580,
 }
 
+/// Clock frequency constants for common C64 configurations.
+pub mod clock {
+    /// PAL C64 clock frequency (~985 kHz).
+    pub const PAL: u32 = 985_248;
+    /// NTSC C64 clock frequency (~1.02 MHz).
+    pub const NTSC: u32 = 1_022_727;
+}
+
 pub use self::sampler::SamplingMethod;
-pub use self::sid::Sid;
+pub use self::sid::{Sid, State};
 
 /// Error returned when sampling parameters are invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
