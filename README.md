@@ -1,13 +1,10 @@
-# residfp
-
-[![Build Status](https://travis-ci.org/binaryfields/resid-rs.svg?branch=master)](https://travis-ci.org/binaryfields/resid-rs)
-[![Crates.io](https://img.shields.io/crates/v/residfp.svg?maxAge=2592000)](https://crates.io/crates/residfp)
+# residfp-rs
 
 ### Overview
 
-Rust port of libresidfp, a MOS6581/8580 SID emulator engine with accurate analog circuit modeling.
-
-### Features (from libresidfp)
+This is a fork of `resid-rs` a MOS6581/8580 SID emulator engine with accurate analog circuit modeling.
+This project injects the following improvements from the
+[`libresidfp`](https://github.com/libsidplayfp/libresidfp) project:
 
 - **DAC nonlinearity model** - R-2R ladder with resistor mismatch and missing termination for 6581
 - **EKV filter model** - Physics-based MOS transistor model for accurate 6581 filter (feature: `ekv-filter`)
@@ -17,13 +14,7 @@ Rust port of libresidfp, a MOS6581/8580 SID emulator engine with accurate analog
 - **Noise LFSR pipeline** - Accurate 2-cycle delay modeling
 - **LFSR delay bug** - Rate counter wrap-around behavior
 - **External filter** - Frequency-dependent coefficients
-- **SIMD resampler** - SSE2/AVX2 runtime dispatch
-
-### Story
-
-This project originated from zinc64, a Commodore 64 emulator, around Jan 2017.
-It evolved to the point where it can be useful to others working on C64 sound/emulation
-so it is packaged and shipped as a standalone crate.
+- **Two-pass sinc resampler** - Chained FIR filters via intermediate frequency for improved efficiency
 
 ### Usage
 
