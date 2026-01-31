@@ -18,17 +18,30 @@ This project injects the following improvements from the
 
 ### Usage
 
-Once SID register read/writes are wired up to residfp, all that is left to do
-is to generate audio samples and push them to audio output buffer.
+```rust
+use residfp::{Sid, ChipModel, SamplingMethod, clock};
 
-    while delta > 0 {
-        let (samples, next_delta) = self.sid.sample(delta, &mut buffer[..], 1);
-        let mut output = self.sound_buffer.lock().unwrap();
-        for i in 0..samples {
-            output.write(buffer[i]);
-        }
-        delta = next_delta;
-    }
+// Create a 6581 SID emulator
+let mut sid = Sid::new(ChipModel::Mos6581);
+sid.set_sampling_parameters(SamplingMethod::Resample, clock::PAL, 48000)?;
+
+// Configure filter (optional)
+sid.set_filter_enabled(true);
+sid.set_filter_curve(0.5);  // 0.0 = bright, 1.0 = dark
+
+// Write to SID registers
+sid.write(0x00, 0x00);  // Voice 1 frequency low
+sid.write(0x01, 0x10);  // Voice 1 frequency high
+sid.write(0x04, 0x11);  // Voice 1 control: gate + triangle
+
+// Generate audio samples
+let mut buffer = [0i16; 1024];
+while delta > 0 {
+    let (samples, next_delta) = sid.sample(delta, &mut buffer, 1);
+    // Push samples to audio output...
+    delta = next_delta;
+}
+```
 
 ### Components
 
@@ -45,14 +58,15 @@ is to generate audio samples and push them to audio output buffer.
 ### Changelog
 
 - 0.3 - compliance with the original resid
-- 0.4 - full sampler support 
-- 0.5 - closed performance gap largely due to resampling 
-- 0.6 - SIMD optimization 
-- 0.7 - continuous integration and GPLv3 
+- 0.4 - full sampler support
+- 0.5 - closed performance gap largely due to resampling
+- 0.6 - SIMD optimization
+- 0.7 - continuous integration and GPLv3
 - 0.8 - documentation and api refinements/internal cleanup
 - 0.9 - migration to Rust 2018
 - 1.0 - no_std support
 - 1.1 - more idiomatic implementation, removes interior mutability and improves support for async rust
+- 1.2 - API ergonomics: `clock::PAL`/`NTSC` constants, `State` save/restore, standard trait derives
 
 ## Credits
 
