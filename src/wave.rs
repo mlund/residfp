@@ -14,8 +14,10 @@ use super::ChipModel;
 
 const ACC_MASK: u32 = 0x00ff_ffff;
 const ACC_BIT19_MASK: u32 = 0x0008_0000;
+const ACC_BIT20_MASK: u32 = 0x0010_0000;
 const ACC_MSB_MASK: u32 = 0x0080_0000;
 const SHIFT_MASK: u32 = 0x007f_ffff;
+const SHIFT_REGISTER_RESET: u32 = 0x007f_fff8;
 const OUTPUT_MASK: u16 = 0x0fff;
 
 // Floating DAC output TTL constants.
@@ -201,7 +203,7 @@ impl WaveformGenerator {
                 // NB! The shift register will not actually be set to this exact value if the
                 // shift register bits have not had time to fade to zero.
                 // This is not modeled.
-                self.shift = 0x007f_fff8;
+                self.shift = SHIFT_REGISTER_RESET;
             }
         }
         self.test = test;
@@ -307,14 +309,14 @@ impl WaveformGenerator {
             // Check whether the MSB is set high. This is used for synchronization.
             self.msb_rising = (acc_prev & ACC_MSB_MASK) == 0 && (self.acc & ACC_MSB_MASK) != 0;
             // Shift noise register once for each time accumulator bit 19 is set high.
-            // Bit 19 is set high each time 2^20 (0x100000) is added to the accumulator.
-            let mut shift_period = 0x0010_0000;
+            // Bit 19 is set high each time 2^20 is added to the accumulator.
+            let mut shift_period = ACC_BIT20_MASK;
             while delta_acc != 0 {
                 if delta_acc < shift_period {
                     shift_period = delta_acc;
                     // Determine whether bit 19 is set on the last period.
                     // NB! Requires two's complement integer.
-                    if shift_period <= 0x0008_0000 {
+                    if shift_period <= ACC_BIT19_MASK {
                         // Check for flip from 0 to 1.
                         if ((self.acc as i32 - shift_period as i32) & ACC_BIT19_MASK as i32) != 0
                             || (self.acc & ACC_BIT19_MASK) == 0
@@ -370,7 +372,7 @@ impl WaveformGenerator {
         self.sync = false;
         self.test = false;
         self.acc = 0;
-        self.shift = 0x007f_fff8;
+        self.shift = SHIFT_REGISTER_RESET;
         self.shift_latch = 0;
         self.shift_pipeline = 0;
         self.test_or_reset = false;
