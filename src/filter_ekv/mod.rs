@@ -23,7 +23,7 @@ use alloc::boxed::Box;
 
 pub use self::config::FilterModelConfig;
 use self::integrator::Integrator6581;
-use super::filter::FilterBehavior;
+use super::filter::{route_voices, FilterBehavior};
 
 const MIXER_DC_6581: i32 = (-0xfff * 0xff / 18) >> 7;
 
@@ -130,81 +130,6 @@ impl Filter6581Ekv {
         self.bp_integrator.set_vw(vw);
     }
 
-    /// Routes voices into or around the filter based on filt register.
-    #[inline]
-    fn route_voices(&mut self, voice1: i32, voice2: i32, voice3: i32, ext_in: i32) -> i32 {
-        match self.filt {
-            0x0 => {
-                self.vnf = voice1 + voice2 + voice3 + ext_in;
-                0
-            }
-            0x1 => {
-                self.vnf = voice2 + voice3 + ext_in;
-                voice1
-            }
-            0x2 => {
-                self.vnf = voice1 + voice3 + ext_in;
-                voice2
-            }
-            0x3 => {
-                self.vnf = voice3 + ext_in;
-                voice1 + voice2
-            }
-            0x4 => {
-                self.vnf = voice1 + voice2 + ext_in;
-                voice3
-            }
-            0x5 => {
-                self.vnf = voice2 + ext_in;
-                voice1 + voice3
-            }
-            0x6 => {
-                self.vnf = voice1 + ext_in;
-                voice2 + voice3
-            }
-            0x7 => {
-                self.vnf = ext_in;
-                voice1 + voice2 + voice3
-            }
-            0x8 => {
-                self.vnf = voice1 + voice2 + voice3;
-                ext_in
-            }
-            0x9 => {
-                self.vnf = voice2 + voice3;
-                voice1 + ext_in
-            }
-            0xa => {
-                self.vnf = voice1 + voice3;
-                voice2 + ext_in
-            }
-            0xb => {
-                self.vnf = voice3;
-                voice1 + voice2 + ext_in
-            }
-            0xc => {
-                self.vnf = voice1 + voice2;
-                voice3 + ext_in
-            }
-            0xd => {
-                self.vnf = voice2;
-                voice1 + voice3 + ext_in
-            }
-            0xe => {
-                self.vnf = voice1;
-                voice2 + voice3 + ext_in
-            }
-            0xf => {
-                self.vnf = 0;
-                voice1 + voice2 + voice3 + ext_in
-            }
-            _ => {
-                self.vnf = voice1 + voice2 + voice3 + ext_in;
-                0
-            }
-        }
-    }
-
     /// Solves the two integrator stages.
     ///
     /// State-variable filter topology:
@@ -263,7 +188,8 @@ impl FilterBehavior for Filter6581Ekv {
         }
 
         // Route voices into or around filter
-        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+        let (vi, vnf) = route_voices(self.filt, voice1, voice2, voice3, ext_in);
+        self.vnf = vnf;
 
         // Solve the two integrator stages
         self.solve_integrators(vi);
@@ -298,7 +224,8 @@ impl FilterBehavior for Filter6581Ekv {
         }
 
         // Route voices into or around filter
-        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+        let (vi, vnf) = route_voices(self.filt, voice1, voice2, voice3, ext_in);
+        self.vnf = vnf;
 
         // Clock the filter for each cycle
         // The EKV model is accurate per-cycle, so we can't skip cycles

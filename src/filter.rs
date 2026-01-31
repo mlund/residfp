@@ -54,6 +54,33 @@ const F0_MAX_DELTA: f64 = 4000.0;
 /// Fixed-point multiplier for 1MHz clock (2^20 / 1_000_000)
 const FIXP_SCALE: f64 = 1.048_576;
 
+/// Routes voices into or around the filter based on the filt register.
+///
+/// Returns `(filtered_input, non_filtered_output)`.
+/// The 16-case match is expanded for performance (avoids bit testing overhead).
+#[inline]
+pub fn route_voices(filt: u8, v1: i32, v2: i32, v3: i32, ext: i32) -> (i32, i32) {
+    match filt {
+        0x0 => (0, v1 + v2 + v3 + ext),
+        0x1 => (v1, v2 + v3 + ext),
+        0x2 => (v2, v1 + v3 + ext),
+        0x3 => (v1 + v2, v3 + ext),
+        0x4 => (v3, v1 + v2 + ext),
+        0x5 => (v1 + v3, v2 + ext),
+        0x6 => (v2 + v3, v1 + ext),
+        0x7 => (v1 + v2 + v3, ext),
+        0x8 => (ext, v1 + v2 + v3),
+        0x9 => (v1 + ext, v2 + v3),
+        0xa => (v2 + ext, v1 + v3),
+        0xb => (v1 + v2 + ext, v3),
+        0xc => (v3 + ext, v1 + v2),
+        0xd => (v1 + v3 + ext, v2),
+        0xe => (v2 + v3 + ext, v1),
+        0xf => (v1 + v2 + v3 + ext, 0),
+        _ => (0, v1 + v2 + v3 + ext),
+    }
+}
+
 /// The SID filter is modeled with a two-integrator-loop biquadratic filter,
 /// which has been confirmed by Bob Yannes to be the actual circuit used in
 /// the SID chip.
@@ -153,83 +180,6 @@ impl Filter {
         [self.vhp, self.vbp, self.vlp, self.vnf] = state;
     }
 
-    /// Routes voices into or around the filter based on filt register.
-    ///
-    /// The 16-case match is expanded for performance (avoids bit testing overhead).
-    #[inline]
-    fn route_voices(&mut self, voice1: i32, voice2: i32, voice3: i32, ext_in: i32) -> i32 {
-        match self.filt {
-            0x0 => {
-                self.vnf = voice1 + voice2 + voice3 + ext_in;
-                0
-            }
-            0x1 => {
-                self.vnf = voice2 + voice3 + ext_in;
-                voice1
-            }
-            0x2 => {
-                self.vnf = voice1 + voice3 + ext_in;
-                voice2
-            }
-            0x3 => {
-                self.vnf = voice3 + ext_in;
-                voice1 + voice2
-            }
-            0x4 => {
-                self.vnf = voice1 + voice2 + ext_in;
-                voice3
-            }
-            0x5 => {
-                self.vnf = voice2 + ext_in;
-                voice1 + voice3
-            }
-            0x6 => {
-                self.vnf = voice1 + ext_in;
-                voice2 + voice3
-            }
-            0x7 => {
-                self.vnf = ext_in;
-                voice1 + voice2 + voice3
-            }
-            0x8 => {
-                self.vnf = voice1 + voice2 + voice3;
-                ext_in
-            }
-            0x9 => {
-                self.vnf = voice2 + voice3;
-                voice1 + ext_in
-            }
-            0xa => {
-                self.vnf = voice1 + voice3;
-                voice2 + ext_in
-            }
-            0xb => {
-                self.vnf = voice3;
-                voice1 + voice2 + ext_in
-            }
-            0xc => {
-                self.vnf = voice1 + voice2;
-                voice3 + ext_in
-            }
-            0xd => {
-                self.vnf = voice2;
-                voice1 + voice3 + ext_in
-            }
-            0xe => {
-                self.vnf = voice1;
-                voice2 + voice3 + ext_in
-            }
-            0xf => {
-                self.vnf = 0;
-                voice1 + voice2 + voice3 + ext_in
-            }
-            _ => {
-                self.vnf = voice1 + voice2 + voice3 + ext_in;
-                0
-            }
-        }
-    }
-
     fn set_q(&mut self) {
         // Q is controlled linearly by res. Q has approximate range [Q_MIN, 1.7].
         // As resonance is increased, the filter must be clocked more often to keep
@@ -299,7 +249,8 @@ impl FilterBehavior for Filter {
             return;
         }
 
-        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+        let (vi, vnf) = route_voices(self.filt, voice1, voice2, voice3, ext_in);
+        self.vnf = vnf;
 
         // delta_t = 1 is converted to seconds given a 1MHz clock by dividing
         // with 1 000 000.
@@ -345,7 +296,8 @@ impl FilterBehavior for Filter {
             return;
         }
 
-        let vi = self.route_voices(voice1, voice2, voice3, ext_in);
+        let (vi, vnf) = route_voices(self.filt, voice1, voice2, voice3, ext_in);
+        self.vnf = vnf;
 
         // Maximum delta cycles for the filter to work satisfactorily under current
         // cutoff frequency and resonance constraints is approximately 8.
