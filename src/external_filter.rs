@@ -108,12 +108,12 @@ impl ExternalFilter {
             // saturating_add for state to clamp rather than wrap on overflow.
             let vi_scaled = (vi as i64) << 11;
             let dvlp = ((self.lp_coeff as i64 * (vi_scaled - self.lp_state as i64)) >> 7) as i32;
-            let dvhp =
-                ((self.hp_coeff as i64 * (self.lp_state - self.hp_state) as i64) >> 17) as i32;
+            let dvhp = ((self.hp_coeff as i64 * (self.lp_state as i64 - self.hp_state as i64))
+                >> 17) as i32;
             self.lp_state = self.lp_state.saturating_add(dvlp);
             self.hp_state = self.hp_state.saturating_add(dvhp);
         } else {
-            self.lp_state = (((vi - self.mixer_dc) as i64) << 11) as i32;
+            self.lp_state = ((vi as i64 - self.mixer_dc as i64) << 11) as i32;
             self.hp_state = 0;
         }
     }
@@ -129,14 +129,15 @@ impl ExternalFilter {
                 let step = delta.min(8) as i64;
                 let dvlp = ((self.lp_coeff as i64 * step * (vi_scaled - self.lp_state as i64)) >> 7)
                     as i32;
-                let dvhp = ((self.hp_coeff as i64 * step * (self.lp_state - self.hp_state) as i64)
-                    >> 17) as i32;
+                let dvhp =
+                    ((self.hp_coeff as i64 * step * (self.lp_state as i64 - self.hp_state as i64))
+                        >> 17) as i32;
                 self.lp_state = self.lp_state.saturating_add(dvlp);
                 self.hp_state = self.hp_state.saturating_add(dvhp);
                 delta -= step as u32;
             }
         } else {
-            self.lp_state = (((vi - self.mixer_dc) as i64) << 11) as i32;
+            self.lp_state = ((vi as i64 - self.mixer_dc as i64) << 11) as i32;
             self.hp_state = 0;
         }
     }
@@ -145,7 +146,7 @@ impl ExternalFilter {
     #[inline]
     pub fn output(&self) -> i32 {
         // Output is Vlp - Vhp, scaled back by 11 bits
-        (self.lp_state - self.hp_state) >> 11
+        ((self.lp_state as i64 - self.hp_state as i64) >> 11) as i32
     }
 
     pub fn reset(&mut self) {

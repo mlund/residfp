@@ -284,39 +284,29 @@ impl Synth {
     /// Only affects 6581 chips; 8580 always uses standard filter.
     #[cfg(feature = "ekv-filter")]
     pub fn toggle_ekv_filter(&mut self) -> bool {
-        use FilterBehavior as _;
         match (&self.filter_impl, self.chip_model) {
-            (FilterImpl::Standard(_), ChipModel::Mos6581) => {
-                // Copy register state to new filter
-                let fc_lo = self.filter_impl.get_fc_lo();
-                let fc_hi = self.filter_impl.get_fc_hi();
-                let res_filt = self.filter_impl.get_res_filt();
-                let mode_vol = self.filter_impl.get_mode_vol();
-
+            (FilterImpl::Standard(old), ChipModel::Mos6581) => {
                 let mut new_filter = Filter6581Ekv::new();
-                new_filter.set_fc_lo(fc_lo);
-                new_filter.set_fc_hi(fc_hi);
-                new_filter.set_res_filt(res_filt);
-                new_filter.set_mode_vol(mode_vol);
+                new_filter.set_fc_lo(old.get_fc_lo());
+                new_filter.set_fc_hi(old.get_fc_hi());
+                new_filter.set_res_filt(old.get_res_filt());
+                new_filter.set_mode_vol(old.get_mode_vol());
                 self.filter_impl = FilterImpl::Ekv(new_filter);
+                // Reset external filter to avoid discontinuity reaction
+                self.ext_filter.reset();
                 true
             }
-            (FilterImpl::Ekv(_), _) => {
-                // Copy register state to new filter
-                let fc_lo = self.filter_impl.get_fc_lo();
-                let fc_hi = self.filter_impl.get_fc_hi();
-                let res_filt = self.filter_impl.get_res_filt();
-                let mode_vol = self.filter_impl.get_mode_vol();
-
+            (FilterImpl::Ekv(old), _) => {
                 let mut new_filter = Filter::new(self.chip_model);
-                new_filter.set_fc_lo(fc_lo);
-                new_filter.set_fc_hi(fc_hi);
-                new_filter.set_res_filt(res_filt);
-                new_filter.set_mode_vol(mode_vol);
+                new_filter.set_fc_lo(old.get_fc_lo());
+                new_filter.set_fc_hi(old.get_fc_hi());
+                new_filter.set_res_filt(old.get_res_filt());
+                new_filter.set_mode_vol(old.get_mode_vol());
                 self.filter_impl = FilterImpl::Standard(new_filter);
+                // Reset external filter to avoid discontinuity reaction
+                self.ext_filter.reset();
                 false
             }
-            // 8580 only has standard filter
             (FilterImpl::Standard(_), ChipModel::Mos8580) => false,
         }
     }

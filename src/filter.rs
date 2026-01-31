@@ -380,6 +380,16 @@ impl Filter {
         }
     }
 
+    /// Returns internal filter state [vhp, vbp, vlp, vnf] for filter switching.
+    pub fn get_state(&self) -> [i32; 4] {
+        [self.vhp, self.vbp, self.vlp, self.vnf]
+    }
+
+    /// Sets internal filter state from [vhp, vbp, vlp, vnf] for filter switching.
+    pub fn set_state(&mut self, state: [i32; 4]) {
+        [self.vhp, self.vbp, self.vlp, self.vnf] = state;
+    }
+
     pub fn reset(&mut self) {
         self.fc = 0;
         self.filt = 0;
