@@ -1018,7 +1018,7 @@ impl Sampler {
         // function in the MATLAB Signal Processing Toolbox:
         // http://www.mathworks.com/access/helpdesk/help/toolbox/signal/kaiserord.html
         let beta = 0.1102f64 * (atten - 8.7);
-        let io_beta = self.i0(beta);
+        let io_beta = i0(beta);
 
         // The filter order will maximally be 124 with the current constraints.
         // N >= (96.33 - 7.95)/(2.285*0.1*pi) -> N >= 123
@@ -1059,7 +1059,7 @@ impl Sampler {
                 let wt = wc * jx / cycles_per_sample;
                 let temp = jx / fir_n_div2 as f64;
                 let kaiser = if temp.abs() <= 1.0 {
-                    self.i0(beta * self.sqrt(1.0 - temp * temp)) / io_beta
+                    i0(beta * sqrt_compat(1.0 - temp * temp)) / io_beta
                 } else {
                     0f64
                 };
@@ -1070,34 +1070,5 @@ impl Sampler {
                 self.fir.data[(fir_offset + j) as usize] = (val + 0.5) as i16;
             }
         }
-    }
-
-    fn i0(&self, x: f64) -> f64 {
-        // Max error acceptable in I0.
-        let i0e = 1e-6;
-        let halfx = x / 2.0;
-        let mut sum = 1.0;
-        let mut u = 1.0;
-        let mut n = 1;
-        loop {
-            let temp = halfx / n as f64;
-            n += 1;
-            u *= temp * temp;
-            sum += u;
-            if u < i0e * sum {
-                break;
-            }
-        }
-        sum
-    }
-
-    #[cfg(feature = "std")]
-    fn sqrt(&self, value: f64) -> f64 {
-        value.sqrt()
-    }
-
-    #[cfg(not(feature = "std"))]
-    fn sqrt(&self, value: f64) -> f64 {
-        libm::sqrt(value)
     }
 }
