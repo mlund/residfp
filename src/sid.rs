@@ -196,11 +196,20 @@ impl Sid {
         self.sampler.synth.clock_delta(delta);
     }
 
-    pub fn enable_external_filter(&mut self, enabled: bool) {
+    /// Enable or disable the external output filter (C64 audio stage).
+    ///
+    /// The external filter models the C64's audio output circuitry:
+    /// a low-pass filter (~16kHz) followed by a DC blocking high-pass (~1.6Hz).
+    /// Enabled by default.
+    pub fn set_external_filter_enabled(&mut self, enabled: bool) {
         self.sampler.synth.ext_filter.set_enabled(enabled);
     }
 
-    pub fn enable_filter(&mut self, enabled: bool) {
+    /// Enable or disable the internal SID filter.
+    ///
+    /// The internal filter is the characteristic multimode filter of the SID chip.
+    /// Disabling bypasses all filter processing. Enabled by default.
+    pub fn set_filter_enabled(&mut self, enabled: bool) {
         self.sampler.synth.filter_impl.set_enabled(enabled);
     }
 

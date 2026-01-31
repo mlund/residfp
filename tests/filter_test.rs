@@ -41,8 +41,8 @@ fn filter_off() {
         -17297, -17297, -17297, -17297, -17297, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(false);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(false);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -67,8 +67,8 @@ fn filter_on() {
         -17297, -17297, -17297, -17297, -17297, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -92,8 +92,8 @@ fn filter_vol_8() {
         -9135, -9135, -9135, -9135, -9135, -9135, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -119,8 +119,8 @@ fn filter_voice3_off() {
         -21059, -21059, -21059, -21059, -21059, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -146,8 +146,8 @@ fn filter_hp_lp_lp() {
         -17297, -17297, -17297, -17297, -17297, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -173,8 +173,8 @@ fn filter_filt_15() {
         -30134, -30356, -30572, -30791, -30994, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -201,8 +201,8 @@ fn filter_res_15() {
         -17297, -17297, -17297, -17297, -17297, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -229,8 +229,8 @@ fn filter_fc_255() {
         -17297, -17297, -17297, -17297, -17297, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -257,8 +257,8 @@ fn filter_fc_res_filt() {
         -31996, -32225, -32452, -32685, -32768, 0, 0,
     ];
     let mut sid = Sid::new(ChipModel::Mos6581);
-    sid.enable_external_filter(false);
-    sid.enable_filter(true);
+    sid.set_external_filter_enabled(false);
+    sid.set_filter_enabled(true);
     setup(&mut sid, 0, 4, 0x19b1, 0x0200, 4);
     setup(&mut sid, 1, 4, 0x29b1, 0x0100, 4);
     setup(&mut sid, 2, 4, 0x39b1, 0x0050, 4);
@@ -300,8 +300,8 @@ fn filter_curve_clamped() {
 fn filter_curve_affects_output() {
     fn sample_with_curve(curve: f64) -> Vec<i16> {
         let mut sid = Sid::new(ChipModel::Mos6581);
-        sid.enable_external_filter(false);
-        sid.enable_filter(true);
+        sid.set_external_filter_enabled(false);
+        sid.set_filter_enabled(true);
         sid.set_filter_curve(curve);
         // Route voice 1 through lowpass filter
         sid.write(0x00, 0xb1); // FREQ_LO
