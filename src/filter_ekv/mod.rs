@@ -23,7 +23,7 @@ use alloc::boxed::Box;
 
 pub use self::config::FilterModelConfig;
 use self::integrator::Integrator6581;
-use super::filter::{route_voices, FilterBehavior};
+use super::filter::{mix_filter_output, route_voices, FilterBehavior};
 
 const MIXER_DC_6581: i32 = (-0xfff * 0xff / 18) >> 7;
 
@@ -240,19 +240,7 @@ impl FilterBehavior for Filter6581Ekv {
         if !self.enabled {
             (self.vnf + self.mixer_dc) * self.vol as i32
         } else {
-            // Mix highpass, bandpass, and lowpass outputs
-            let vf = match self.hp_bp_lp {
-                0x0 => 0,
-                0x1 => self.vlp,
-                0x2 => self.vbp,
-                0x3 => self.vlp + self.vbp,
-                0x4 => self.vhp,
-                0x5 => self.vlp + self.vhp,
-                0x6 => self.vbp + self.vhp,
-                0x7 => self.vlp + self.vbp + self.vhp,
-                _ => 0,
-            };
-            // Sum non-filtered and filtered output, multiply by volume
+            let vf = mix_filter_output(self.vhp, self.vbp, self.vlp, self.hp_bp_lp);
             (self.vnf + vf + self.mixer_dc) * self.vol as i32
         }
     }

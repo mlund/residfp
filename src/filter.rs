@@ -81,6 +81,25 @@ pub fn route_voices(filt: u8, v1: i32, v2: i32, v3: i32, ext: i32) -> (i32, i32)
     }
 }
 
+/// Mixes filter outputs based on the hp_bp_lp mode register.
+///
+/// Combines highpass, bandpass, and lowpass outputs according to
+/// which filter modes are enabled (bits 0-2 of MODE_VOL register).
+#[inline]
+pub fn mix_filter_output(vhp: i32, vbp: i32, vlp: i32, hp_bp_lp: u8) -> i32 {
+    match hp_bp_lp {
+        0x0 => 0,
+        0x1 => vlp,
+        0x2 => vbp,
+        0x3 => vlp + vbp,
+        0x4 => vhp,
+        0x5 => vlp + vhp,
+        0x6 => vbp + vhp,
+        0x7 => vlp + vbp + vhp,
+        _ => 0,
+    }
+}
+
 /// The SID filter is modeled with a two-integrator-loop biquadratic filter,
 /// which has been confirmed by Bob Yannes to be the actual circuit used in
 /// the SID chip.
@@ -328,30 +347,10 @@ impl FilterBehavior for Filter {
 
     #[inline]
     fn output(&self) -> i32 {
-        // This is handy for testing.
         if !self.enabled {
             (self.vnf + self.mixer_dc) * self.vol as i32
         } else {
-            // Mix highpass, bandpass, and lowpass outputs. The sum is not
-            // weighted, this can be confirmed by sampling sound output for
-            // e.g. bandpass, lowpass, and bandpass+lowpass from a SID chip.
-            // The code below is expanded to a switch for faster execution.
-            // if (hp) Vf += Vhp;
-            // if (bp) Vf += Vbp;
-            // if (lp) Vf += Vlp;
-            let vf = match self.hp_bp_lp {
-                0x0 => 0,
-                0x1 => self.vlp,
-                0x2 => self.vbp,
-                0x3 => self.vlp + self.vbp,
-                0x4 => self.vhp,
-                0x5 => self.vlp + self.vhp,
-                0x6 => self.vbp + self.vhp,
-                0x7 => self.vlp + self.vbp + self.vhp,
-                _ => 0,
-            };
-            // Sum non-filtered and filtered output.
-            // Multiply the sum with volume.
+            let vf = mix_filter_output(self.vhp, self.vbp, self.vlp, self.hp_bp_lp);
             (self.vnf + vf + self.mixer_dc) * self.vol as i32
         }
     }
