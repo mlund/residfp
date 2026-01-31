@@ -5,7 +5,7 @@
 
 use super::envelope::State as EnvState;
 use super::sampler::{Sampler, SamplingMethod};
-use super::synth::Synth;
+use super::synth::{FilterBehavior, Synth};
 use super::{ChipModel, SamplingError};
 
 /// Default clock frequency: PAL C64 (~985 kHz)
@@ -93,6 +93,24 @@ impl Sid {
         sid
     }
 
+    /// Toggles between standard and EKV transistor model filter.
+    ///
+    /// The EKV filter uses physics-based MOS transistor modeling for more
+    /// accurate 6581 filter behavior, but uses more CPU and memory (~388KB).
+    /// Has no effect on 8580 chips (EKV model is 6581-specific).
+    ///
+    /// Returns `true` if now using EKV filter, `false` if using standard.
+    #[cfg(feature = "ekv-filter")]
+    pub fn toggle_ekv_filter(&mut self) -> bool {
+        self.sampler.synth.toggle_ekv_filter()
+    }
+
+    /// Returns `true` if currently using the EKV transistor model filter.
+    #[cfg(feature = "ekv-filter")]
+    pub fn is_ekv_filter_enabled(&self) -> bool {
+        self.sampler.synth.is_ekv_filter_enabled()
+    }
+
     /// Set sampling parameters for audio output.
     ///
     /// # Errors
@@ -145,7 +163,7 @@ impl Sid {
     }
 
     pub fn enable_filter(&mut self, enabled: bool) {
-        self.sampler.synth.filter.set_enabled(enabled);
+        self.sampler.synth.filter_impl.set_enabled(enabled);
     }
 
     /// Set filter curve parameter for tuning to match specific SID chips.
@@ -153,12 +171,12 @@ impl Sid {
     /// Range: 0.0 (bright/high frequencies) to 1.0 (dark/low frequencies)
     /// Default: 0.5
     pub fn set_filter_curve(&mut self, curve: f64) {
-        self.sampler.synth.filter.set_filter_curve(curve);
+        self.sampler.synth.filter_impl.set_filter_curve(curve);
     }
 
     /// Get current filter curve parameter.
     pub fn get_filter_curve(&self) -> f64 {
-        self.sampler.synth.filter.get_filter_curve()
+        self.sampler.synth.filter_impl.get_filter_curve()
     }
 
     pub fn input(&mut self, sample: i32) {
@@ -239,7 +257,7 @@ impl Sid {
             state.sid_register[j + 5] = envelope.get_attack_decay();
             state.sid_register[j + 6] = envelope.get_sustain_release();
         }
-        let filter = &self.sampler.synth.filter;
+        let filter = &self.sampler.synth.filter_impl;
         state.sid_register[0x15] = filter.get_fc_lo();
         state.sid_register[0x16] = filter.get_fc_hi();
         state.sid_register[0x17] = filter.get_res_filt();

@@ -10,6 +10,8 @@ use alloc::boxed::Box;
 use super::dac::build_dac_table;
 use super::external_filter::ExternalFilter;
 use super::filter::Filter;
+#[cfg(feature = "ekv-filter")]
+use super::filter_ekv::Filter6581Ekv;
 use super::sid::reg;
 use super::voice::Voice;
 use super::wave::Syncable;
@@ -18,6 +20,214 @@ use super::ChipModel;
 const OUTPUT_RANGE: u32 = 1 << 16;
 const OUTPUT_HALF: i32 = (OUTPUT_RANGE >> 1) as i32;
 const SAMPLES_PER_OUTPUT: u32 = ((4095 * 255) >> 7) * 3 * 15 * 2 / OUTPUT_RANGE;
+
+/// Common interface for SID filter implementations.
+///
+/// Both the standard spline-based filter and the EKV transistor model
+/// implement this trait, enabling runtime selection between them.
+pub trait FilterBehavior {
+    /// Clock the filter for one cycle with voice and external inputs.
+    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32);
+    /// Clock the filter for multiple cycles.
+    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32);
+    /// Get the current filter output value.
+    fn output(&self) -> i32;
+    /// Reset filter state to initial values.
+    fn reset(&mut self);
+    /// Enable or disable the filter (bypasses when disabled).
+    fn set_enabled(&mut self, enabled: bool);
+    /// Set filter curve/range for tuning to match specific SID chips.
+    fn set_filter_curve(&mut self, curve: f64);
+    /// Get current filter curve parameter.
+    fn get_filter_curve(&self) -> f64;
+    // Register access
+    fn get_fc_lo(&self) -> u8;
+    fn get_fc_hi(&self) -> u8;
+    fn get_res_filt(&self) -> u8;
+    fn get_mode_vol(&self) -> u8;
+    fn set_fc_lo(&mut self, value: u8);
+    fn set_fc_hi(&mut self, value: u8);
+    fn set_res_filt(&mut self, value: u8);
+    fn set_mode_vol(&mut self, value: u8);
+}
+
+impl FilterBehavior for Filter {
+    #[inline]
+    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32) {
+        Filter::clock(self, v1, v2, v3, ext);
+    }
+    #[inline]
+    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32) {
+        Filter::clock_delta(self, delta, v1, v2, v3, ext);
+    }
+    #[inline]
+    fn output(&self) -> i32 {
+        Filter::output(self)
+    }
+    fn reset(&mut self) {
+        Filter::reset(self);
+    }
+    fn set_enabled(&mut self, enabled: bool) {
+        Filter::set_enabled(self, enabled);
+    }
+    fn set_filter_curve(&mut self, curve: f64) {
+        Filter::set_filter_curve(self, curve);
+    }
+    fn get_filter_curve(&self) -> f64 {
+        Filter::get_filter_curve(self)
+    }
+    fn get_fc_lo(&self) -> u8 {
+        Filter::get_fc_lo(self)
+    }
+    fn get_fc_hi(&self) -> u8 {
+        Filter::get_fc_hi(self)
+    }
+    fn get_res_filt(&self) -> u8 {
+        Filter::get_res_filt(self)
+    }
+    fn get_mode_vol(&self) -> u8 {
+        Filter::get_mode_vol(self)
+    }
+    fn set_fc_lo(&mut self, value: u8) {
+        Filter::set_fc_lo(self, value);
+    }
+    fn set_fc_hi(&mut self, value: u8) {
+        Filter::set_fc_hi(self, value);
+    }
+    fn set_res_filt(&mut self, value: u8) {
+        Filter::set_res_filt(self, value);
+    }
+    fn set_mode_vol(&mut self, value: u8) {
+        Filter::set_mode_vol(self, value);
+    }
+}
+
+#[cfg(feature = "ekv-filter")]
+impl FilterBehavior for Filter6581Ekv {
+    #[inline]
+    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32) {
+        Filter6581Ekv::clock(self, v1, v2, v3, ext);
+    }
+    #[inline]
+    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32) {
+        Filter6581Ekv::clock_delta(self, delta, v1, v2, v3, ext);
+    }
+    #[inline]
+    fn output(&self) -> i32 {
+        Filter6581Ekv::output(self)
+    }
+    fn reset(&mut self) {
+        Filter6581Ekv::reset(self);
+    }
+    fn set_enabled(&mut self, enabled: bool) {
+        Filter6581Ekv::set_enabled(self, enabled);
+    }
+    fn set_filter_curve(&mut self, curve: f64) {
+        Filter6581Ekv::set_filter_curve(self, curve);
+    }
+    fn get_filter_curve(&self) -> f64 {
+        Filter6581Ekv::get_filter_curve(self)
+    }
+    fn get_fc_lo(&self) -> u8 {
+        Filter6581Ekv::get_fc_lo(self)
+    }
+    fn get_fc_hi(&self) -> u8 {
+        Filter6581Ekv::get_fc_hi(self)
+    }
+    fn get_res_filt(&self) -> u8 {
+        Filter6581Ekv::get_res_filt(self)
+    }
+    fn get_mode_vol(&self) -> u8 {
+        Filter6581Ekv::get_mode_vol(self)
+    }
+    fn set_fc_lo(&mut self, value: u8) {
+        Filter6581Ekv::set_fc_lo(self, value);
+    }
+    fn set_fc_hi(&mut self, value: u8) {
+        Filter6581Ekv::set_fc_hi(self, value);
+    }
+    fn set_res_filt(&mut self, value: u8) {
+        Filter6581Ekv::set_res_filt(self, value);
+    }
+    fn set_mode_vol(&mut self, value: u8) {
+        Filter6581Ekv::set_mode_vol(self, value);
+    }
+}
+
+/// Runtime-selectable filter implementation.
+///
+/// Allows switching between the standard spline-based filter and the
+/// physics-based EKV transistor model (when the `ekv-filter` feature is enabled).
+#[derive(Clone)]
+pub enum FilterImpl {
+    /// Standard filter using spline interpolation lookup tables.
+    Standard(Filter),
+    /// EKV transistor model filter for accurate 6581 emulation (feature-gated).
+    #[cfg(feature = "ekv-filter")]
+    Ekv(Filter6581Ekv),
+}
+
+/// Forwards all FilterBehavior methods to the inner filter.
+macro_rules! forward_filter_method {
+    ($self:ident, $method:ident $(, $arg:expr)*) => {
+        match $self {
+            Self::Standard(f) => f.$method($($arg),*),
+            #[cfg(feature = "ekv-filter")]
+            Self::Ekv(f) => f.$method($($arg),*),
+        }
+    };
+}
+
+impl FilterBehavior for FilterImpl {
+    #[inline]
+    fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32) {
+        forward_filter_method!(self, clock, v1, v2, v3, ext);
+    }
+    #[inline]
+    fn clock_delta(&mut self, delta: u32, v1: i32, v2: i32, v3: i32, ext: i32) {
+        forward_filter_method!(self, clock_delta, delta, v1, v2, v3, ext);
+    }
+    #[inline]
+    fn output(&self) -> i32 {
+        forward_filter_method!(self, output)
+    }
+    fn reset(&mut self) {
+        forward_filter_method!(self, reset);
+    }
+    fn set_enabled(&mut self, enabled: bool) {
+        forward_filter_method!(self, set_enabled, enabled);
+    }
+    fn set_filter_curve(&mut self, curve: f64) {
+        forward_filter_method!(self, set_filter_curve, curve);
+    }
+    fn get_filter_curve(&self) -> f64 {
+        forward_filter_method!(self, get_filter_curve)
+    }
+    fn get_fc_lo(&self) -> u8 {
+        forward_filter_method!(self, get_fc_lo)
+    }
+    fn get_fc_hi(&self) -> u8 {
+        forward_filter_method!(self, get_fc_hi)
+    }
+    fn get_res_filt(&self) -> u8 {
+        forward_filter_method!(self, get_res_filt)
+    }
+    fn get_mode_vol(&self) -> u8 {
+        forward_filter_method!(self, get_mode_vol)
+    }
+    fn set_fc_lo(&mut self, value: u8) {
+        forward_filter_method!(self, set_fc_lo, value);
+    }
+    fn set_fc_hi(&mut self, value: u8) {
+        forward_filter_method!(self, set_fc_hi, value);
+    }
+    fn set_res_filt(&mut self, value: u8) {
+        forward_filter_method!(self, set_res_filt, value);
+    }
+    fn set_mode_vol(&mut self, value: u8) {
+        forward_filter_method!(self, set_mode_vol, value);
+    }
+}
 
 /// DAC lookup tables for waveform (12-bit) and envelope (8-bit)
 #[derive(Clone)]
@@ -31,11 +241,14 @@ pub struct DacTables {
 #[derive(Clone)]
 pub struct Synth {
     pub ext_filter: ExternalFilter,
-    pub filter: Filter,
+    /// Filter implementation (standard or EKV)
+    pub filter_impl: FilterImpl,
     pub voices: [Voice; 3],
     pub ext_in: i32,
     /// DAC nonlinearity tables for accurate R-2R ladder emulation
     pub dac: DacTables,
+    /// Chip model for filter switching
+    chip_model: ChipModel,
 }
 
 // slice::rotate_left is inefficient for small arrays:
@@ -54,14 +267,64 @@ impl Synth {
     pub fn new(chip_model: ChipModel) -> Self {
         Synth {
             ext_filter: ExternalFilter::new(chip_model),
-            filter: Filter::new(chip_model),
+            filter_impl: FilterImpl::Standard(Filter::new(chip_model)),
             voices: core::array::from_fn(|_| Voice::new(chip_model)),
             ext_in: 0,
             dac: DacTables {
                 wav: build_dac_table(12, chip_model).into_boxed_slice(),
                 env: build_dac_table(8, chip_model).into_boxed_slice(),
             },
+            chip_model,
         }
+    }
+
+    /// Toggles between standard and EKV transistor model filter.
+    ///
+    /// Returns `true` if now using EKV, `false` if using standard.
+    /// Only affects 6581 chips; 8580 always uses standard filter.
+    #[cfg(feature = "ekv-filter")]
+    pub fn toggle_ekv_filter(&mut self) -> bool {
+        use FilterBehavior as _;
+        match (&self.filter_impl, self.chip_model) {
+            (FilterImpl::Standard(_), ChipModel::Mos6581) => {
+                // Copy register state to new filter
+                let fc_lo = self.filter_impl.get_fc_lo();
+                let fc_hi = self.filter_impl.get_fc_hi();
+                let res_filt = self.filter_impl.get_res_filt();
+                let mode_vol = self.filter_impl.get_mode_vol();
+
+                let mut new_filter = Filter6581Ekv::new();
+                new_filter.set_fc_lo(fc_lo);
+                new_filter.set_fc_hi(fc_hi);
+                new_filter.set_res_filt(res_filt);
+                new_filter.set_mode_vol(mode_vol);
+                self.filter_impl = FilterImpl::Ekv(new_filter);
+                true
+            }
+            (FilterImpl::Ekv(_), _) => {
+                // Copy register state to new filter
+                let fc_lo = self.filter_impl.get_fc_lo();
+                let fc_hi = self.filter_impl.get_fc_hi();
+                let res_filt = self.filter_impl.get_res_filt();
+                let mode_vol = self.filter_impl.get_mode_vol();
+
+                let mut new_filter = Filter::new(self.chip_model);
+                new_filter.set_fc_lo(fc_lo);
+                new_filter.set_fc_hi(fc_hi);
+                new_filter.set_res_filt(res_filt);
+                new_filter.set_mode_vol(mode_vol);
+                self.filter_impl = FilterImpl::Standard(new_filter);
+                false
+            }
+            // 8580 only has standard filter
+            (FilterImpl::Standard(_), ChipModel::Mos8580) => false,
+        }
+    }
+
+    /// Returns `true` if using EKV filter.
+    #[cfg(feature = "ekv-filter")]
+    pub fn is_ekv_filter_enabled(&self) -> bool {
+        matches!(self.filter_impl, FilterImpl::Ekv(_))
     }
 
     pub fn syncable_voice(&self, i: usize) -> Syncable<&'_ Voice> {
@@ -98,7 +361,7 @@ impl Synth {
             self.syncable_voice_mut(i).wave().synchronize();
         }
         // Clock filter with DAC-modeled voice outputs.
-        self.filter.clock(
+        self.filter_impl.clock(
             self.syncable_voice(0)
                 .output_dac(&self.dac.wav, &self.dac.env),
             self.syncable_voice(1)
@@ -108,7 +371,7 @@ impl Synth {
             self.ext_in,
         );
         // Clock external filter.
-        self.ext_filter.clock(self.filter.output());
+        self.ext_filter.clock(self.filter_impl.output());
     }
 
     pub fn clock_delta(&mut self, delta: u32) {
@@ -156,7 +419,7 @@ impl Synth {
             delta_osc -= delta_min;
         }
         // Clock filter with DAC-modeled voice outputs.
-        self.filter.clock_delta(
+        self.filter_impl.clock_delta(
             delta,
             self.syncable_voice(0)
                 .output_dac(&self.dac.wav, &self.dac.env),
@@ -167,7 +430,8 @@ impl Synth {
             self.ext_in,
         );
         // Clock external filter.
-        self.ext_filter.clock_delta(delta, self.filter.output());
+        self.ext_filter
+            .clock_delta(delta, self.filter_impl.output());
     }
 
     pub fn output(&self) -> i16 {
@@ -184,7 +448,7 @@ impl Synth {
 
     pub fn reset(&mut self) {
         self.ext_filter.reset();
-        self.filter.reset();
+        self.filter_impl.reset();
         for i in 0..3 {
             self.voices[i].reset();
         }
@@ -224,10 +488,10 @@ impl Synth {
             reg::CR3 => self.voices[2].set_control(value),
             reg::AD3 => self.voices[2].envelope.set_attack_decay(value),
             reg::SR3 => self.voices[2].envelope.set_sustain_release(value),
-            reg::FCLO => self.filter.set_fc_lo(value),
-            reg::FCHI => self.filter.set_fc_hi(value),
-            reg::RESFILT => self.filter.set_res_filt(value),
-            reg::MODVOL => self.filter.set_mode_vol(value),
+            reg::FCLO => self.filter_impl.set_fc_lo(value),
+            reg::FCHI => self.filter_impl.set_fc_hi(value),
+            reg::RESFILT => self.filter_impl.set_res_filt(value),
+            reg::MODVOL => self.filter_impl.set_mode_vol(value),
             _ => {}
         }
     }
