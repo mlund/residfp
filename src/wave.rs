@@ -561,3 +561,272 @@ impl Syncable<&'_ mut WaveformGenerator> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_wave() -> WaveformGenerator {
+        let mut gen = WaveformGenerator::new(ChipModel::Mos6581);
+        gen.reset();
+        gen
+    }
+
+    fn clock_n(gen: &mut WaveformGenerator, n: u32) {
+        for _ in 0..n {
+            gen.clock();
+        }
+    }
+
+    #[test]
+    fn shift_register_init_value() {
+        let gen = new_wave();
+        assert_eq!(gen.get_shift(), 0x007f_fff8);
+    }
+
+    #[test]
+    fn noise_output() {
+        let mut gen = new_wave();
+        gen.shift = 0x35555f;
+        gen.set_control(0x80);
+        gen.clock();
+        assert!(gen.output(None) > 0, "Noise should produce non-zero output");
+    }
+
+    #[test]
+    fn test_bit_clears_register() {
+        let mut gen = new_wave();
+        gen.set_frequency_lo(0xff);
+        gen.set_frequency_hi(0xff);
+        clock_n(&mut gen, 1000);
+
+        gen.set_control(0x08);
+        gen.clock();
+        assert_eq!(gen.get_shift(), 0);
+
+        gen.set_control(0x00);
+        gen.clock();
+        assert_eq!(gen.get_shift(), 0x007f_fff8);
+    }
+
+    #[test]
+    fn test_bit_clears_accumulator() {
+        let mut gen = new_wave();
+        gen.set_frequency_lo(0xff);
+        gen.set_frequency_hi(0xff);
+        clock_n(&mut gen, 100);
+
+        assert!(gen.get_acc() != 0);
+
+        gen.set_control(0x08);
+        assert_eq!(gen.get_acc(), 0);
+    }
+
+    #[test]
+    fn accumulator_increment() {
+        let mut gen = new_wave();
+        gen.set_frequency_lo(0x01);
+        gen.set_frequency_hi(0x00);
+
+        gen.clock();
+        assert_eq!(gen.get_acc(), 1);
+        gen.clock();
+        assert_eq!(gen.get_acc(), 2);
+
+        gen.set_frequency_lo(0x00);
+        gen.set_frequency_hi(0x01);
+        let before = gen.get_acc();
+        gen.clock();
+        assert_eq!(gen.get_acc(), before + 256);
+    }
+
+    #[test]
+    fn accumulator_wrap() {
+        let mut gen = new_wave();
+        gen.set_acc(0x00ff_fffe);
+        gen.set_frequency_lo(0x10);
+        gen.clock();
+        assert_eq!(gen.get_acc() & 0x00ff_ffff, 0x00_000e);
+    }
+
+    #[test]
+    fn shift_register_clock_on_bit19() {
+        let mut gen = new_wave();
+        let initial = gen.get_shift();
+
+        gen.set_acc(0x0007_fff0);
+        gen.set_frequency_lo(0x20);
+        gen.clock();
+
+        assert_eq!(
+            gen.get_shift(),
+            initial,
+            "LFSR should not shift immediately"
+        );
+
+        gen.clock();
+        assert_eq!(
+            gen.get_shift(),
+            initial,
+            "LFSR should not shift yet (pipeline phase 1)"
+        );
+
+        gen.clock();
+        assert_ne!(
+            gen.get_shift(),
+            initial,
+            "LFSR should clock after 2-cycle pipeline delay"
+        );
+    }
+
+    #[test]
+    fn sync_bit() {
+        let mut gen = new_wave();
+        assert!(!gen.get_sync());
+        gen.set_control(0x02);
+        assert!(gen.get_sync());
+        gen.set_control(0x00);
+        assert!(!gen.get_sync());
+    }
+
+    #[test]
+    fn msb_rising() {
+        let mut gen = new_wave();
+        gen.set_acc(0x007f_fff0);
+        gen.set_frequency_lo(0x20);
+        gen.clock();
+        assert!(gen.is_msb_rising(), "Should detect bit 23 transition 0->1");
+        gen.clock();
+        assert!(!gen.is_msb_rising(), "Flag clears after one cycle");
+    }
+
+    macro_rules! test_waveform {
+        ($name:ident, $waveform:expr, $check:expr) => {
+            #[test]
+            fn $name() {
+                let mut gen = new_wave();
+                gen.set_frequency_hi(0x10);
+                gen.set_pulse_width_hi(0x08);
+                gen.set_control($waveform << 4);
+                clock_n(&mut gen, 100);
+                let out = gen.output(None);
+                let check: fn(u16) -> bool = $check;
+                assert!(check(out), "Waveform {} output {} invalid", $waveform, out);
+            }
+        };
+    }
+
+    test_waveform!(waveform_triangle, 1, |o| o > 0 && o < 0x0fff);
+    test_waveform!(waveform_sawtooth, 2, |o| o > 0 && o <= 0x0fff);
+    test_waveform!(waveform_pulse, 4, |o| o == 0 || o == 0x0fff);
+    test_waveform!(waveform_noise, 8, |_| true);
+
+    #[test]
+    fn floating_dac_holds_last_value() {
+        let mut gen = new_wave();
+        gen.set_frequency_hi(0x10);
+        gen.set_control(0x20);
+        clock_n(&mut gen, 1000);
+
+        let last_output = gen.output(None);
+        assert!(last_output > 0);
+
+        gen.set_control(0x00);
+        gen.clock();
+        assert_eq!(
+            gen.output(None),
+            last_output,
+            "Floating DAC should hold last value"
+        );
+    }
+
+    #[test]
+    fn floating_dac_fades_to_zero() {
+        let mut gen = new_wave();
+        gen.set_frequency_hi(0x10);
+        gen.set_control(0x20);
+        clock_n(&mut gen, 1000);
+
+        let last_output = gen.output(None);
+        assert!(last_output > 0);
+
+        gen.set_control(0x00);
+        clock_n(&mut gen, 80000);
+        assert_eq!(gen.output(None), 0, "Floating DAC should fade to zero");
+    }
+
+    #[test]
+    fn floating_dac_fade_pattern() {
+        let mut gen = new_wave();
+        gen.set_frequency_hi(0x08);
+        gen.set_pulse_width_hi(0x00);
+        gen.set_pulse_width_lo(0x01);
+        gen.set_control(0x40);
+        clock_n(&mut gen, 100);
+
+        let initial = gen.output(None);
+        assert_eq!(initial, 0x0fff);
+
+        gen.set_control(0x00);
+        clock_n(&mut gen, 54001);
+
+        let after_fade = gen.output(None);
+        assert_eq!(after_fade, 0x07ff, "First fade: 0x0fff & 0x07ff = 0x07ff");
+    }
+
+    #[test]
+    fn floating_dac_8580_longer_ttl() {
+        let mut gen_6581 = WaveformGenerator::new(ChipModel::Mos6581);
+        let mut gen_8580 = WaveformGenerator::new(ChipModel::Mos8580);
+
+        for gen in [&mut gen_6581, &mut gen_8580] {
+            gen.set_frequency_hi(0x10);
+            gen.set_control(0x20);
+        }
+        clock_n(&mut gen_6581, 1000);
+        clock_n(&mut gen_8580, 1000);
+
+        let out_6581 = gen_6581.output(None);
+        let out_8580 = gen_8580.output(None);
+
+        gen_6581.set_control(0x00);
+        gen_8580.set_control(0x00);
+
+        clock_n(&mut gen_6581, 60000);
+        clock_n(&mut gen_8580, 60000);
+
+        assert!(
+            gen_6581.output(None) < out_6581,
+            "6581 should have faded after 60k cycles"
+        );
+        assert_eq!(
+            gen_8580.output(None),
+            out_8580,
+            "8580 should still hold value after 60k cycles"
+        );
+    }
+
+    #[test]
+    #[ignore = "write-back not implemented"]
+    fn noise_write_back() {
+        let mut gen = new_wave();
+        gen.set_control(0x80);
+        gen.set_control(0x88);
+        gen.clock();
+        let _ = gen.output(None);
+        gen.set_control(0x90);
+        gen.clock();
+        let _ = gen.output(None);
+
+        let expected_osc3: [u8; 8] = [0xfc, 0x6c, 0xd8, 0xb1, 0xd8, 0x6a, 0xb1, 0xf0];
+        for &expected in &expected_osc3 {
+            gen.set_control(0x88);
+            gen.clock();
+            let _ = gen.output(None);
+            gen.set_control(0x80);
+            gen.clock();
+            let osc3 = (gen.output(None) >> 4) as u8;
+            assert_eq!(osc3, expected);
+        }
+    }
+}

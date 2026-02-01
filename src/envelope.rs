@@ -347,3 +347,114 @@ impl EnvelopeGenerator {
         self.rate_counter_period = RATE_COUNTER_PERIOD[self.release as usize];
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_envelope() -> EnvelopeGenerator {
+        let mut gen = EnvelopeGenerator::default();
+        gen.reset();
+        gen.envelope_counter = 0;
+        gen
+    }
+
+    fn clock_n(gen: &mut EnvelopeGenerator, n: u32) {
+        for _ in 0..n {
+            gen.clock();
+        }
+    }
+
+    /// ADSR delay bug: lowering attack rate mid-envelope causes rate counter
+    /// to wrap around 0x8000 before the next step occurs.
+    #[test]
+    fn adsr_delay_bug() {
+        let mut gen = new_envelope();
+        gen.set_attack_decay(0x70);
+        gen.set_control(0x01);
+        clock_n(&mut gen, 200);
+
+        assert_eq!(gen.read_env(), 0);
+
+        gen.set_attack_decay(0x20);
+        clock_n(&mut gen, 200);
+
+        assert_eq!(
+            gen.read_env(),
+            0,
+            "ADSR delay bug: counter must wrap 0x8000"
+        );
+    }
+
+    /// Counter wraps 0xff->0x00 via release->attack transition, then freezes.
+    #[test]
+    fn flip_ff_to_00() {
+        let mut gen = new_envelope();
+        gen.set_attack_decay(0x77);
+        gen.set_sustain_release(0x77);
+        gen.set_control(0x01);
+
+        while gen.read_env() != 0xff {
+            gen.clock();
+        }
+
+        gen.set_control(0x00);
+        clock_n(&mut gen, 3);
+        gen.set_control(0x01);
+        clock_n(&mut gen, 315);
+
+        assert_eq!(
+            gen.read_env(),
+            0,
+            "Counter should wrap 0xff->0x00 and freeze"
+        );
+    }
+
+    /// Counter wraps 0x00->0xff via attack->release transition.
+    #[test]
+    fn flip_00_to_ff() {
+        let mut gen = new_envelope();
+        gen.hold_zero = true;
+        gen.set_attack_decay(0x77);
+        gen.set_sustain_release(0x77);
+        gen.clock();
+
+        assert_eq!(gen.read_env(), 0);
+
+        gen.set_control(0x01);
+        clock_n(&mut gen, 3);
+        gen.set_control(0x00);
+        clock_n(&mut gen, 315);
+
+        assert_eq!(gen.read_env(), 0xff, "Counter should wrap 0x00->0xff");
+    }
+
+    macro_rules! test_attack_rate {
+        ($name:ident, $attack:expr, $period:expr) => {
+            #[test]
+            fn $name() {
+                let mut gen = new_envelope();
+                gen.set_attack_decay($attack << 4);
+                gen.set_control(0x01);
+
+                let mut cycles = 0u32;
+                while gen.read_env() == 0 && cycles < 100_000 {
+                    gen.clock();
+                    cycles += 1;
+                }
+
+                assert!(
+                    cycles <= $period + 10,
+                    "Attack {} period: expected ~{}, got {}",
+                    $attack,
+                    $period,
+                    cycles
+                );
+            }
+        };
+    }
+
+    test_attack_rate!(attack_rate_0, 0, 9);
+    test_attack_rate!(attack_rate_1, 1, 32);
+    test_attack_rate!(attack_rate_2, 2, 63);
+}

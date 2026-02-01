@@ -20,21 +20,15 @@ extern crate std;
 extern crate std as alloc;
 pub mod dac;
 mod data;
-/// Envelope generator modeling SID ADSR behavior.
 pub mod envelope;
-/// External C64 audio output filter.
 pub mod external_filter;
-/// Internal SID multimode filter implementation.
 pub mod filter;
 #[cfg(feature = "ekv-filter")]
 pub mod filter_ekv;
 pub mod sampler;
 mod sid;
-/// Core SID synthesizer combining voices, filter, and routing.
 pub mod synth;
-/// Voice primitives (waveform + envelope).
 pub mod voice;
-/// Oscillator waveform generator primitives and sync helpers.
 pub mod wave;
 
 /// Configuration for constructing a [`Sid`].
