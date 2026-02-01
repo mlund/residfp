@@ -21,22 +21,22 @@ impl ChipModel {
     /// MOSFET leakage causes non-zero output even when transistors are "off"
     const fn leakage(self) -> f64 {
         match self {
-            ChipModel::Mos6581 => 0.0075,
-            ChipModel::Mos8580 => 0.0035,
+            Self::Mos6581 => 0.0075,
+            Self::Mos8580 => 0.0035,
         }
     }
 
     /// 6581 has imperfect resistor matching, 8580 is ideal
     const fn r2r_ratio(self) -> f64 {
         match self {
-            ChipModel::Mos6581 => 2.20,
-            ChipModel::Mos8580 => 2.00,
+            Self::Mos6581 => 2.20,
+            Self::Mos8580 => 2.00,
         }
     }
 
     /// 6581 DACs lack termination resistor at bit 0
     const fn has_termination(self) -> bool {
-        matches!(self, ChipModel::Mos8580)
+        matches!(self, Self::Mos8580)
     }
 }
 

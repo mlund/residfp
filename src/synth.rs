@@ -136,7 +136,7 @@ fn rotate3<T>([a, b, c]: [T; 3], i: usize) -> [T; 3] {
 impl Synth {
     /// Create a synthesizer for the given chip model with default filter/DAC state.
     pub fn new(chip_model: ChipModel) -> Self {
-        Synth {
+        Self {
             ext_filter: ExternalFilter::new(chip_model),
             filter_impl: FilterImpl::Standard(Filter::new(chip_model)),
             voices: core::array::from_fn(|_| Voice::new(chip_model)),
@@ -184,7 +184,7 @@ impl Synth {
 
     /// Returns `true` if using EKV filter.
     #[cfg(feature = "ekv-filter")]
-    pub fn is_ekv_filter_enabled(&self) -> bool {
+    pub const fn is_ekv_filter_enabled(&self) -> bool {
         matches!(self.filter_impl, FilterImpl::Ekv(_))
     }
 
@@ -301,7 +301,7 @@ impl Synth {
 
     /// Mixed audio output (16-bit) after external filter.
     /// Current mixed audio sample (16-bit) after filters.
-    pub fn output(&self) -> i16 {
+    pub const fn output(&self) -> i16 {
         // Read sample from audio output.
         let sample = self.ext_filter.output() / SAMPLES_PER_OUTPUT as i32;
         if sample >= OUTPUT_HALF {

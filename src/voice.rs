@@ -50,13 +50,13 @@ impl Voice {
     /// Create a voice for the given chip model.
     pub fn new(chip_model: ChipModel) -> Self {
         match chip_model {
-            ChipModel::Mos6581 => Voice {
+            ChipModel::Mos6581 => Self {
                 wave_zero: WAVE_ZERO,
                 voice_dc: VOICE_DC,
                 envelope: EnvelopeGenerator::default(),
                 wave: WaveformGenerator::new(chip_model),
             },
-            ChipModel::Mos8580 => Voice {
+            ChipModel::Mos8580 => Self {
                 // No DC offsets in the MOS8580.
                 wave_zero: 0x800,
                 voice_dc: 0,
@@ -124,7 +124,7 @@ impl Syncable<&'_ Voice> {
 
 impl<'a> Syncable<&'a Voice> {
     /// Access waveform generators for sync relationships (immutable).
-    pub fn wave(self) -> Syncable<&'a WaveformGenerator> {
+    pub const fn wave(self) -> Syncable<&'a WaveformGenerator> {
         Syncable {
             main: &self.main.wave,
             sync_dest: &self.sync_dest.wave,
@@ -135,7 +135,7 @@ impl<'a> Syncable<&'a Voice> {
 
 impl<'a> Syncable<&'a mut Voice> {
     /// Access waveform generators for sync relationships (mutable).
-    pub fn wave(self) -> Syncable<&'a mut WaveformGenerator> {
+    pub const fn wave(self) -> Syncable<&'a mut WaveformGenerator> {
         Syncable {
             main: &mut self.main.wave,
             sync_dest: &mut self.sync_dest.wave,

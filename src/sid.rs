@@ -136,7 +136,7 @@ pub struct SidConfig {
 #[cfg(all(feature = "alloc", feature = "std"))]
 impl Default for SidConfig {
     fn default() -> Self {
-        SidConfig {
+        Self {
             chip_model: ChipModel::default(),
             sampling_method: SamplingMethod::Fast,
             clock_freq: DEFAULT_CLOCK_FREQ,
@@ -164,7 +164,7 @@ impl Sid {
         sample_freq: u32,
     ) -> Self {
         let synth = Synth::new(chip_model);
-        let mut sid = Sid {
+        let mut sid = Self {
             sampler: Sampler::new(synth),
             bus_value: 0,
             bus_value_ttl: 0,
@@ -200,7 +200,7 @@ impl Sid {
 
     /// Returns `true` if currently using the EKV transistor model filter.
     #[cfg(feature = "ekv-filter")]
-    pub fn is_ekv_filter_enabled(&self) -> bool {
+    pub const fn is_ekv_filter_enabled(&self) -> bool {
         self.sampler.synth.is_ekv_filter_enabled()
     }
 
@@ -258,7 +258,7 @@ impl Sid {
     /// The external filter models the C64's audio output circuitry:
     /// a low-pass filter (~16kHz) followed by a DC blocking high-pass (~1.6Hz).
     /// Enabled by default.
-    pub fn set_external_filter_enabled(&mut self, enabled: bool) {
+    pub const fn set_external_filter_enabled(&mut self, enabled: bool) {
         self.sampler.synth.ext_filter.set_enabled(enabled);
     }
 
@@ -284,14 +284,14 @@ impl Sid {
     }
 
     /// Feed an external audio input sample.
-    pub fn input(&mut self, sample: i32) {
+    pub const fn input(&mut self, sample: i32) {
         // Voice outputs are 20 bits. Scale up to match three voices in order
         // to facilitate simulation of the MOS8580 "digi boost" hardware hack.
         self.sampler.synth.ext_in = (sample << 4) * 3;
     }
 
     /// Current mixed audio sample (16-bit).
-    pub fn output(&self) -> i16 {
+    pub const fn output(&self) -> i16 {
         self.sampler.synth.output()
     }
 

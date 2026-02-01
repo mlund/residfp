@@ -30,14 +30,11 @@ const C_HP: f64 = 10e-6; // 10uF
 /// Default clock frequency (PAL C64)
 const DEFAULT_CLOCK_FREQ: f64 = 985248.0;
 
-/// The audio output stage in a Commodore 64 consists of two STC networks,
-/// a low-pass filter with 3-dB frequency ~16kHz followed by a high-pass
-/// filter (DC blocker) with 3-dB frequency ~1.6Hz (assuming 10kOhm audio
-/// equipment input impedance).
+/// C64 audio output stage filter.
 ///
-/// The STC networks are connected with a BJT (2SC1815) configured as a
-/// common collector voltage follower. Accurate BJT modeling would require
-/// MHz-level sampling, so we use a simplified RC filter model.
+/// Models two STC networks: a ~16kHz low-pass followed by a ~1.6Hz high-pass
+/// (DC blocker). Uses simplified RC model instead of full BJT (2SC1815)
+/// simulation which would require MHz-level sampling.
 #[derive(Clone, Copy)]
 pub struct ExternalFilter {
     // Configuration
@@ -67,7 +64,7 @@ impl ExternalFilter {
             ChipModel::Mos6581 => MIXER_DC_6581,
             ChipModel::Mos8580 => 0,
         };
-        let mut filter = ExternalFilter {
+        let mut filter = Self {
             enabled: true,
             mixer_dc,
             lp_coeff: 0,
@@ -81,7 +78,7 @@ impl ExternalFilter {
     }
 
     /// Enable or disable the external audio filter stage.
-    pub fn set_enabled(&mut self, enabled: bool) {
+    pub const fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
@@ -103,7 +100,7 @@ impl ExternalFilter {
 
     /// Clock the filter for one cycle.
     #[inline]
-    pub fn clock(&mut self, vi: i32) {
+    pub const fn clock(&mut self, vi: i32) {
         if self.enabled {
             // Overflow protection: input can be ~24 bits (3 voices * 20-bit * volume),
             // shifted by 11 would overflow i32. Use i64 for intermediates and
@@ -146,13 +143,13 @@ impl ExternalFilter {
 
     /// Get the filtered output, scaled back from internal precision.
     #[inline]
-    pub fn output(&self) -> i32 {
+    pub const fn output(&self) -> i32 {
         // Output is Vlp - Vhp, scaled back by 11 bits
         ((self.lp_state as i64 - self.hp_state as i64) >> 11) as i32
     }
 
     /// Reset internal filter state to zero.
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.lp_state = 0;
         self.hp_state = 0;
     }

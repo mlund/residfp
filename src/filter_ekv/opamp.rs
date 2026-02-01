@@ -84,7 +84,7 @@ impl MonotoneSpline {
             });
         }
 
-        MonotoneSpline { segments }
+        Self { segments }
     }
 
     /// Evaluates the spline at x, returning (y, dy/dx).
@@ -94,7 +94,7 @@ impl MonotoneSpline {
             .segments
             .iter()
             .find(|s| x <= s.x2)
-            .unwrap_or(self.segments.last().unwrap());
+            .unwrap_or_else(|| self.segments.last().unwrap());
 
         let diff = x - seg.x1;
 

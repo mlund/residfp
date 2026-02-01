@@ -82,7 +82,7 @@ impl Filter6581Ekv {
         let hp_integrator = Integrator6581::new(&config);
         let bp_integrator = Integrator6581::new(&config);
 
-        let mut filter = Filter6581Ekv {
+        let mut filter = Self {
             config,
             hp_integrator,
             bp_integrator,
@@ -115,13 +115,13 @@ impl Filter6581Ekv {
 
     /// Returns internal filter state [vhp, vbp, vlp, vnf] for filter switching.
     #[allow(dead_code)]
-    pub fn get_state(&self) -> [i32; 4] {
+    pub const fn get_state(&self) -> [i32; 4] {
         [self.vhp, self.vbp, self.vlp, self.vnf]
     }
 
     /// Sets internal filter state from [vhp, vbp, vlp, vnf] for filter switching.
     #[allow(dead_code)]
-    pub fn set_state(&mut self, state: [i32; 4]) {
+    pub const fn set_state(&mut self, state: [i32; 4]) {
         [self.vhp, self.vbp, self.vlp, self.vnf] = state;
     }
 
@@ -158,7 +158,7 @@ impl Filter6581Ekv {
     ///
     /// For 6581: 1/Q ~ ~res/8
     #[inline]
-    fn get_q_divisor(&self) -> i32 {
+    const fn get_q_divisor(&self) -> i32 {
         // Inverted resonance bits give 1/Q
         let inv_res = (!self.res & 0x0f) as i32;
         // Scale to 1024 fixed-point: 1024 * (inv_res/8) = 128 * inv_res

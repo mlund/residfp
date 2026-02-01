@@ -91,7 +91,7 @@ pub struct Sampler {
 impl Sampler {
     /// Construct a sampler around a SID synthesizer.
     pub fn new(synth: Synth) -> Self {
-        Sampler {
+        Self {
             synth,
             cycles_per_sample: 0,
             #[cfg(feature = "alloc")]
@@ -560,22 +560,22 @@ impl Sampler {
     }
 
     #[inline]
-    fn get_next_sample_offset(&self) -> i32 {
+    const fn get_next_sample_offset(&self) -> i32 {
         self.offset + self.cycles_per_sample as i32 + (1 << (FIXP_SHIFT - 1))
     }
 
     #[inline]
-    fn get_next_sample_offset2(&self) -> i32 {
+    const fn get_next_sample_offset2(&self) -> i32 {
         self.offset + self.cycles_per_sample as i32
     }
 
     #[inline]
-    fn update_sample_offset(&mut self, next_sample_offset: i32) {
+    const fn update_sample_offset(&mut self, next_sample_offset: i32) {
         self.offset = (next_sample_offset & FIXP_MASK) - (1 << (FIXP_SHIFT - 1));
     }
 
     #[inline]
-    fn update_sample_offset2(&mut self, next_sample_offset: i32) {
+    const fn update_sample_offset2(&mut self, next_sample_offset: i32) {
         self.offset = next_sample_offset & FIXP_MASK;
     }
 }

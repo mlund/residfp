@@ -77,7 +77,7 @@ impl TwoPassResampler {
         let cycles_per_sample1 = (clock_freq / intermediate_freq * FIXP_SCALE as f64) as i32;
         let cycles_per_sample2 = (intermediate_freq / sample_freq * FIXP_SCALE as f64) as i32;
 
-        TwoPassResampler {
+        Self {
             fir1,
             fir2,
             buffer1: [0; RING_SIZE * 2],
@@ -119,12 +119,12 @@ impl TwoPassResampler {
 
     /// Get the final output value.
     #[inline]
-    pub fn output(&self) -> i32 {
+    pub const fn output(&self) -> i32 {
         self.output_value2
     }
 
     /// Reset resampler state.
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.buffer1 = [0; RING_SIZE * 2];
         self.buffer2 = [0; RING_SIZE * 2];
         self.index1 = 0;
@@ -258,7 +258,7 @@ impl TwoPassResampler {
     /// Check if decimation produces output, update offset state.
     /// Returns offset for convolution when output is ready.
     #[inline]
-    fn check_decimation(offset: &mut i32, cycles_per_sample: i32) -> Option<i32> {
+    const fn check_decimation(offset: &mut i32, cycles_per_sample: i32) -> Option<i32> {
         let convolution_offset = if *offset < FIXP_SCALE {
             let result = *offset;
             *offset += cycles_per_sample;

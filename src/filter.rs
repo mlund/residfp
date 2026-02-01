@@ -68,7 +68,7 @@ const FIXP_SCALE: f64 = 1.048_576;
 /// Returns `(filtered_input, non_filtered_output)`.
 /// The 16-case match is expanded for performance (avoids bit testing overhead).
 #[inline]
-pub fn route_voices(filt: u8, v1: i32, v2: i32, v3: i32, ext: i32) -> (i32, i32) {
+pub const fn route_voices(filt: u8, v1: i32, v2: i32, v3: i32, ext: i32) -> (i32, i32) {
     match filt {
         0x0 => (0, v1 + v2 + v3 + ext),
         0x1 => (v1, v2 + v3 + ext),
@@ -95,7 +95,7 @@ pub fn route_voices(filt: u8, v1: i32, v2: i32, v3: i32, ext: i32) -> (i32, i32)
 /// Combines highpass, bandpass, and lowpass outputs according to
 /// which filter modes are enabled (bits 0-2 of MODE_VOL register).
 #[inline]
-pub fn mix_filter_output(vhp: i32, vbp: i32, vlp: i32, hp_bp_lp: u8) -> i32 {
+pub const fn mix_filter_output(vhp: i32, vbp: i32, vlp: i32, hp_bp_lp: u8) -> i32 {
     match hp_bp_lp {
         0x0 => 0,
         0x1 => vlp,
@@ -178,7 +178,7 @@ impl Filter {
             ChipModel::Mos6581 => &SPLINE6581_F0,
             ChipModel::Mos8580 => &SPLINE8580_F0,
         };
-        let mut filter = Filter {
+        let mut filter = Self {
             chip_model,
             enabled: true,
             fc: 0,
@@ -206,13 +206,13 @@ impl Filter {
 
     /// Returns internal filter state [vhp, vbp, vlp, vnf] for filter switching.
     #[allow(dead_code)]
-    pub fn get_state(&self) -> [i32; 4] {
+    pub const fn get_state(&self) -> [i32; 4] {
         [self.vhp, self.vbp, self.vlp, self.vnf]
     }
 
     /// Sets internal filter state from [vhp, vbp, vlp, vnf] for filter switching.
     #[allow(dead_code)]
-    pub fn set_state(&mut self, state: [i32; 4]) {
+    pub const fn set_state(&mut self, state: [i32; 4]) {
         [self.vhp, self.vbp, self.vlp, self.vnf] = state;
     }
 

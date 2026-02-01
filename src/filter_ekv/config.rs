@@ -168,7 +168,7 @@ impl FilterModelConfig {
     /// Returns the global singleton if initialized.
     #[cfg(feature = "std")]
     #[allow(dead_code)]
-    pub fn try_global() -> Option<&'static FilterModelConfig> {
+    pub fn try_global() -> Option<&'static Self> {
         CONFIG.get()
     }
 
@@ -178,7 +178,7 @@ impl FilterModelConfig {
     /// Panics if `init()` was not called. Prefer `try_global()` for fallible access.
     #[cfg(feature = "std")]
     #[allow(dead_code)]
-    pub fn global() -> &'static FilterModelConfig {
+    pub fn global() -> &'static Self {
         Self::try_global().expect("FilterModelConfig::init() must be called first")
     }
 
@@ -238,7 +238,7 @@ impl FilterModelConfig {
         // Build filter cutoff frequency DAC table
         let f0_dac = build_f0_dac_table(n16, vmin, dac_zero, dac_scale);
 
-        FilterModelConfig {
+        Self {
             vcr_n_vg,
             vcr_n_ids_term,
             opamp_rev,
@@ -307,32 +307,32 @@ impl FilterModelConfig {
 
     /// Returns normalized Vdd - Vth.
     #[inline]
-    pub fn get_n_vddt(&self) -> u16 {
+    pub const fn get_n_vddt(&self) -> u16 {
         self.n_vddt
     }
 
     /// Returns normalized threshold voltage.
     #[inline]
-    pub fn get_n_vt(&self) -> u16 {
+    pub const fn get_n_vt(&self) -> u16 {
         self.n_vt
     }
 
     /// Returns normalized minimum voltage.
     #[inline]
-    pub fn get_n_vmin(&self) -> u16 {
+    pub const fn get_n_vmin(&self) -> u16 {
         self.n_vmin
     }
 
     /// Returns fixed-point scale factor.
     #[inline]
     #[allow(dead_code)]
-    pub fn get_n16(&self) -> f64 {
+    pub const fn get_n16(&self) -> f64 {
         self.n16
     }
 
     /// Returns W/L ratio for snake resistor.
     #[inline]
-    pub fn get_wl_snake(&self) -> f64 {
+    pub const fn get_wl_snake(&self) -> f64 {
         self.wl_snake
     }
 }
@@ -403,6 +403,7 @@ fn build_vcr_n_vg_table(n16: f64, vddt: f64, vmin: f64) -> Box<[u16; 65536]> {
 ///   Is = (2 * Ut^2) * W/L
 ///   if = ln^2(1 + exp((k*(Vg - Vt) - Vs) / (2*Ut)))
 ///   ir = ln^2(1 + exp((k*(Vg - Vt) - Vd) / (2*Ut)))
+#[allow(clippy::large_stack_frames)]
 fn build_vcr_n_ids_term_table(n16: f64, norm: f64, c: f64, wl_vcr: f64) -> Box<[f64; 65536]> {
     // Moderate inversion characteristic current (without uCox)
     let is = 2.0 * UT * UT * wl_vcr;

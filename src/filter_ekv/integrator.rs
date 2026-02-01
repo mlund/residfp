@@ -56,8 +56,8 @@ pub struct Integrator6581 {
 
 impl Integrator6581 {
     /// Creates a new integrator, caching constant values from config.
-    pub fn new(config: &FilterModelConfig) -> Self {
-        Integrator6581 {
+    pub const fn new(config: &FilterModelConfig) -> Self {
+        Self {
             vc: 0,
             vx: 0,
             n_vddt_vw_2: 0,
@@ -72,13 +72,13 @@ impl Integrator6581 {
     ///
     /// This pre-computes (nVddt - Vw)^2 / 2 for the VCR gate voltage calculation.
     #[inline]
-    pub fn set_vw(&mut self, vw: u16) {
+    pub const fn set_vw(&mut self, vw: u16) {
         let diff = self.n_vddt.saturating_sub(vw) as u32;
         self.n_vddt_vw_2 = (diff * diff) >> 1;
     }
 
     /// Resets the integrator state.
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.vc = 0;
         self.vx = 0;
         self.n_vddt_vw_2 = 0;

@@ -81,7 +81,7 @@ const SUSTAIN_LEVEL: [u8; 16] = [
 ];
 
 /// Envelope generator state machine.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum State {
     /// Attack phase ramping up toward 0xff.
     Attack,
@@ -91,14 +91,12 @@ pub enum State {
     Release,
 }
 
-/// A 15 bit counter is used to implement the envelope rates, in effect
-/// dividing the clock to the envelope counter by the currently selected rate
-/// period.
-/// In addition, another counter is used to implement the exponential envelope
-/// decay, in effect further dividing the clock to the envelope counter.
-/// The period of this counter is set to 1, 2, 4, 8, 16, 30 at the envelope
-/// counter values 255, 93, 54, 26, 14, 6, respectively.
 /// SID ADSR envelope generator.
+///
+/// A 15 bit counter implements envelope rates by dividing the clock to the
+/// envelope counter by the currently selected rate period. Another counter
+/// implements exponential decay, with periods 1, 2, 4, 8, 16, 30 at envelope
+/// values 255, 93, 54, 26, 14, 6 respectively.
 #[derive(Clone, Copy)]
 pub struct EnvelopeGenerator {
     // Configuration
@@ -127,7 +125,7 @@ pub struct EnvelopeGenerator {
 
 impl Default for EnvelopeGenerator {
     fn default() -> Self {
-        let mut envelope = EnvelopeGenerator {
+        let mut envelope = Self {
             attack: 0,
             decay: 0,
             sustain: 0,
@@ -148,7 +146,7 @@ impl Default for EnvelopeGenerator {
 
 impl EnvelopeGenerator {
     /// Packed attack/decay nibble register.
-    pub fn get_attack_decay(&self) -> u8 {
+    pub const fn get_attack_decay(&self) -> u8 {
         self.attack << 4 | self.decay
     }
 
@@ -160,12 +158,12 @@ impl EnvelopeGenerator {
     }
 
     /// Packed sustain/release nibble register.
-    pub fn get_sustain_release(&self) -> u8 {
+    pub const fn get_sustain_release(&self) -> u8 {
         self.sustain << 4 | self.release
     }
 
     /// Write attack/decay register.
-    pub fn set_attack_decay(&mut self, value: u8) {
+    pub const fn set_attack_decay(&mut self, value: u8) {
         self.attack = (value >> 4) & 0x0f;
         self.decay = value & 0x0f;
         match self.state {
@@ -206,7 +204,7 @@ impl EnvelopeGenerator {
     /// Step the envelope counter based on current ADSR state.
     /// Attack increments, Decay/Release decrement.
     #[inline]
-    fn step_envelope(&mut self) {
+    const fn step_envelope(&mut self) {
         match self.state {
             State::Attack => {
                 // Counter can flip 0xff→0x00 via release→attack transition,
@@ -233,7 +231,7 @@ impl EnvelopeGenerator {
     /// Update exponential counter period based on envelope counter value.
     /// Period increases as counter decreases, modeling RC discharge curve.
     #[inline]
-    fn update_exponential_period(&mut self) {
+    const fn update_exponential_period(&mut self) {
         match self.envelope_counter {
             0xff => self.exponential_counter_period = 1,
             0x5d => self.exponential_counter_period = 2,
@@ -322,17 +320,17 @@ impl EnvelopeGenerator {
 
     #[inline]
     /// Current envelope output level (0-255).
-    pub fn output(&self) -> u8 {
+    pub const fn output(&self) -> u8 {
         self.envelope_counter
     }
 
     /// Alias for `output`, used by register reads.
-    pub fn read_env(&self) -> u8 {
-        self.output()
+    pub const fn read_env(&self) -> u8 {
+        self.envelope_counter
     }
 
     /// Reset to initial state (Release, counters zeroed).
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.attack = 0;
         self.decay = 0;
         self.sustain = 0;
