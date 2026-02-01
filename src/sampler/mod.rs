@@ -65,8 +65,10 @@ pub enum SamplingMethod {
 }
 
 #[derive(Clone)]
+/// Audio sampler wrapping the SID synthesizer and resamplers.
 pub struct Sampler {
     // Dependencies
+    /// Underlying SID synthesizer.
     pub synth: Synth,
     // Configuration
     cycles_per_sample: u32,
@@ -87,6 +89,7 @@ pub struct Sampler {
 }
 
 impl Sampler {
+    /// Construct a sampler around a SID synthesizer.
     pub fn new(synth: Synth) -> Self {
         Sampler {
             synth,
@@ -159,6 +162,8 @@ impl Sampler {
         Ok(())
     }
 
+    /// Reset sampler and underlying synth/filter state.
+    /// Reset sampler and underlying synth/filter state.
     pub fn reset(&mut self) {
         self.synth.reset();
         self.index = 0;
@@ -171,6 +176,8 @@ impl Sampler {
     }
 
     #[inline]
+    /// Clock the sampler for `delta` cycles, writing interleaved audio samples.
+    /// Clock the sampler for `delta` SID cycles, writing interleaved audio samples.
     pub fn clock(&mut self, delta: u32, buffer: &mut [i16], interleave: usize) -> (usize, u32) {
         match self.sampling_method {
             SamplingMethod::Fast => self.clock_fast(delta, buffer, interleave),
@@ -188,6 +195,8 @@ impl Sampler {
 
     /// SID clocking with audio sampling - delta clocking picking nearest sample.
     #[inline]
+    /// Nearest-neighbor (decimation) sampling.
+    /// Nearest-neighbor (decimation) sampling.
     fn clock_fast(
         &mut self,
         mut delta: u32,
@@ -217,6 +226,7 @@ impl Sampler {
     }
 
     #[inline]
+    /// Linear interpolation sampling.
     fn clock_interpolate(
         &mut self,
         mut delta: u32,
@@ -256,6 +266,7 @@ impl Sampler {
     /// SID clocking with audio sampling - cycle based with audio resampling.
     #[cfg(feature = "alloc")]
     #[inline]
+    /// High-quality sinc resampling (Kaiser window).
     fn clock_resample_interpolate(
         &mut self,
         mut delta: u32,
@@ -338,6 +349,7 @@ impl Sampler {
     /// SID clocking with audio sampling - cycle based with audio resampling.
     #[cfg(feature = "alloc")]
     #[inline]
+    /// Faster sinc resampling using larger precomputed tables.
     fn clock_resample_fast(
         &mut self,
         mut delta: u32,
@@ -399,6 +411,7 @@ impl Sampler {
     /// SID clocking with two-pass audio resampling.
     #[cfg(feature = "alloc")]
     #[inline]
+    /// Two-pass sinc resampling for large ratio changes.
     fn clock_resample_two_pass(
         &mut self,
         delta: u32,

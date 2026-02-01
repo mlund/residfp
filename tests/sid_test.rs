@@ -1,5 +1,7 @@
 mod data;
 
+#[cfg(all(feature = "alloc", feature = "std"))]
+use residfp::{clock, SamplingMethod, SidConfig};
 use residfp::{ChipModel, Sid};
 
 #[rustfmt::skip]
@@ -41,6 +43,29 @@ fn generate_sid_output() -> Vec<i16> {
         i += 3;
     }
     outputs
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+#[test]
+fn config_defaults_match_new() {
+    let via_new = Sid::new(ChipModel::Mos6581);
+    let via_config = Sid::from_config(SidConfig::default());
+    // Compare a few observable defaults
+    assert_eq!(via_new.output(), via_config.output());
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+#[test]
+fn config_allows_custom_params() {
+    let mut sid = Sid::from_config(SidConfig {
+        chip_model: ChipModel::Mos8580,
+        sampling_method: SamplingMethod::Fast,
+        clock_freq: clock::NTSC,
+        sample_freq: 48_000u32,
+    });
+    // Smoke check: write and sample without panic
+    let mut buf = [0i16; 8];
+    let (_written, _remaining) = sid.sample(10_000, &mut buf, 1);
 }
 
 #[test]

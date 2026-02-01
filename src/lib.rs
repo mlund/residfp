@@ -4,25 +4,43 @@
 // Licensed under the GPLv3. See LICENSE file in the project root for full license text.
 
 #![no_std]
+#![warn(missing_docs)]
+//! Floating-point SID (MOS6581/8580) emulator derived from libresidfp.
+//!
+//! ## Feature flags
+//! - `ekv-filter`: Enables a physics-based EKV transistor model for the 6581
+//!   filter. Improves accuracy (especially on darker 6581 chips) at the cost of
+//!   ~400KB of lookup tables and additional CPU usage. No effect on 8580.
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 #[cfg(all(feature = "alloc", feature = "std"))]
 extern crate std as alloc;
-
 pub mod dac;
 mod data;
+/// Envelope generator modeling SID ADSR behavior.
 pub mod envelope;
+/// External C64 audio output filter.
 pub mod external_filter;
+/// Internal SID multimode filter implementation.
 pub mod filter;
 #[cfg(feature = "ekv-filter")]
 pub mod filter_ekv;
 pub mod sampler;
 mod sid;
 pub mod spline;
+/// Core SID synthesizer combining voices, filter, and routing.
 pub mod synth;
+/// Voice primitives (waveform + envelope).
 pub mod voice;
+/// Oscillator waveform generator primitives and sync helpers.
 pub mod wave;
+
+/// Configuration for constructing a [`Sid`].
+#[cfg(all(feature = "alloc", feature = "std"))]
+pub use self::sid::SidConfig;
 
 /// SID chip model selection.
 ///

@@ -99,9 +99,12 @@
 #![allow(clippy::float_cmp)]
 #![allow(clippy::too_many_arguments)]
 
+/// 2D point used for spline interpolation.
 #[derive(Clone, Copy, PartialEq)]
 pub struct Point {
+    /// X coordinate.
     pub x: f64,
+    /// Y coordinate.
     pub y: f64,
 }
 
@@ -114,15 +117,18 @@ impl From<(i32, i32)> for Point {
     }
 }
 
+/// Helper to plot spline results into an integer buffer.
 pub struct PointPlotter<'a> {
     output: &'a mut [i32],
 }
 
 impl<'a> PointPlotter<'a> {
+    /// Create a plotter writing into the provided buffer.
     pub fn new(output: &'a mut [i32]) -> Self {
         PointPlotter { output }
     }
 
+    /// Plot a value at coordinate `x` with non-negative clamp.
     pub fn plot(&mut self, x: f64, y: f64) {
         let value = if y > 0.0 { y as i32 } else { 0 };
         self.output[x as usize] = value;

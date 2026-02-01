@@ -61,6 +61,7 @@ const fn time_constant(resistance: f64, capacitance: f64) -> f64 {
 }
 
 impl ExternalFilter {
+    /// Create an external filter model for the selected SID chip.
     pub fn new(chip_model: ChipModel) -> Self {
         let mixer_dc = match chip_model {
             ChipModel::Mos6581 => MIXER_DC_6581,
@@ -79,6 +80,7 @@ impl ExternalFilter {
         filter
     }
 
+    /// Enable or disable the external audio filter stage.
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
@@ -149,6 +151,7 @@ impl ExternalFilter {
         ((self.lp_state as i64 - self.hp_state as i64) >> 11) as i32
     }
 
+    /// Reset internal filter state to zero.
     pub fn reset(&mut self) {
         self.lp_state = 0;
         self.hp_state = 0;

@@ -7,7 +7,7 @@ This project injects the following improvements from the
 [`libresidfp`](https://github.com/libsidplayfp/libresidfp) project:
 
 - **DAC nonlinearity model** - R-2R ladder with resistor mismatch and missing termination for 6581
-- **EKV filter model** - Physics-based MOS transistor model for accurate 6581 filter (feature: `ekv-filter`)
+ - **EKV filter model** - Physics-based MOS transistor model for accurate 6581 filter (feature: `ekv-filter`, ~400KB tables, higher CPU)
 - **Filter curve adjustment** - 0..1 parameter for tuning to match specific SID chips
 - **Soft clipping** - Tanh approximation for 16-bit saturation
 - **Floating DAC output** - Tracks DAC fade when no waveform selected
@@ -19,11 +19,15 @@ This project injects the following improvements from the
 ### Usage
 
 ```rust
-use residfp::{Sid, ChipModel, SamplingMethod, clock};
+use residfp::{Sid, SidConfig, ChipModel, SamplingMethod, clock};
 
 // Create a 6581 SID emulator
-let mut sid = Sid::new(ChipModel::Mos6581);
-sid.set_sampling_parameters(SamplingMethod::Resample, clock::PAL, 48000)?;
+let mut sid = Sid::from_config(SidConfig {
+    chip_model: ChipModel::Mos6581,
+    sampling_method: SamplingMethod::Resample,
+    clock_freq: clock::PAL,
+    sample_freq: 48_000,
+});
 
 // Configure filter (optional)
 sid.set_filter_enabled(true);

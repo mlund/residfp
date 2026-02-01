@@ -80,10 +80,14 @@ const SUSTAIN_LEVEL: [u8; 16] = [
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
 ];
 
+/// Envelope generator state machine.
 #[derive(Clone, Copy, PartialEq)]
 pub enum State {
+    /// Attack phase ramping up toward 0xff.
     Attack,
+    /// Decay toward sustain, then hold.
     DecaySustain,
+    /// Release toward zero after gate off.
     Release,
 }
 
@@ -94,6 +98,7 @@ pub enum State {
 /// decay, in effect further dividing the clock to the envelope counter.
 /// The period of this counter is set to 1, 2, 4, 8, 16, 30 at the envelope
 /// counter values 255, 93, 54, 26, 14, 6, respectively.
+/// SID ADSR envelope generator.
 #[derive(Clone, Copy)]
 pub struct EnvelopeGenerator {
     // Configuration
@@ -104,12 +109,19 @@ pub struct EnvelopeGenerator {
     // Control
     gate: bool,
     // Runtime State
+    /// Current ADSR phase.
     pub state: State,
+    /// Current envelope output level (0-255).
     pub envelope_counter: u8,
+    /// Exponential step counter.
     pub exponential_counter: u8,
+    /// Exponential counter period.
     pub exponential_counter_period: u8,
+    /// Holds zero when test/underflow.
     pub hold_zero: bool,
+    /// Linear rate counter.
     pub rate_counter: u16,
+    /// Linear rate counter period.
     pub rate_counter_period: u16,
 }
 
@@ -135,20 +147,24 @@ impl Default for EnvelopeGenerator {
 }
 
 impl EnvelopeGenerator {
+    /// Packed attack/decay nibble register.
     pub fn get_attack_decay(&self) -> u8 {
         self.attack << 4 | self.decay
     }
 
+    /// Control register exposing gate bit.
     pub fn get_control(&self) -> u8 {
         let mut value = 0u8;
         value.set_bit(0, self.gate);
         value
     }
 
+    /// Packed sustain/release nibble register.
     pub fn get_sustain_release(&self) -> u8 {
         self.sustain << 4 | self.release
     }
 
+    /// Write attack/decay register.
     pub fn set_attack_decay(&mut self, value: u8) {
         self.attack = (value >> 4) & 0x0f;
         self.decay = value & 0x0f;
@@ -161,6 +177,7 @@ impl EnvelopeGenerator {
         }
     }
 
+    /// Write control register (gate).
     pub fn set_control(&mut self, value: u8) {
         let gate = value.get_bit(0);
         if !self.gate && gate {
@@ -177,6 +194,7 @@ impl EnvelopeGenerator {
         self.gate = gate;
     }
 
+    /// Write sustain/release register.
     pub fn set_sustain_release(&mut self, value: u8) {
         self.sustain = (value >> 4) & 0x0f;
         self.release = value & 0x0f;
@@ -233,6 +251,7 @@ impl EnvelopeGenerator {
     }
 
     #[inline]
+    /// Clock the envelope generator by one SID cycle.
     pub fn clock(&mut self) {
         // ADSR delay bug: if rate_counter_period is set below rate_counter,
         // counter wraps at 2^15 before envelope can step.
@@ -263,6 +282,7 @@ impl EnvelopeGenerator {
     }
 
     #[inline]
+    /// Clock the envelope by multiple cycles, honoring rate counter boundaries.
     pub fn clock_delta(&mut self, mut delta: u32) {
         // Calculate cycles until next rate counter match (two's complement math).
         let mut rate_step = self.rate_counter_period as i32 - self.rate_counter as i32;
@@ -301,14 +321,17 @@ impl EnvelopeGenerator {
     }
 
     #[inline]
+    /// Current envelope output level (0-255).
     pub fn output(&self) -> u8 {
         self.envelope_counter
     }
 
+    /// Alias for `output`, used by register reads.
     pub fn read_env(&self) -> u8 {
         self.output()
     }
 
+    /// Reset to initial state (Release, counters zeroed).
     pub fn reset(&mut self) {
         self.attack = 0;
         self.decay = 0;

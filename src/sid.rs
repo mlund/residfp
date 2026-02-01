@@ -91,10 +91,15 @@ pub struct State {
 ///
 /// # Example
 /// ```ignore
-/// use residfp::{Sid, ChipModel, SamplingMethod, clock};
+/// use residfp::{Sid, SidConfig, ChipModel, SamplingMethod, clock};
 ///
-/// let mut sid = Sid::new(ChipModel::Mos6581);
-/// sid.set_sampling_parameters(SamplingMethod::Resample, clock::PAL, 48000)?;
+/// let config = SidConfig {
+///     chip_model: ChipModel::Mos6581,
+///     sampling_method: SamplingMethod::Resample,
+///     clock_freq: clock::PAL,
+///     sample_freq: 48_000,
+/// };
+/// let mut sid = Sid::from_config(config);
 ///
 /// // Write to SID registers
 /// sid.write(0x00, 0x00);  // Voice 1 frequency low
@@ -114,21 +119,71 @@ pub struct Sid {
     bus_value_ttl: u32,
 }
 
+/// Configuration for constructing a [`Sid`].
+#[cfg(all(feature = "alloc", feature = "std"))]
+#[derive(Clone, Debug)]
+pub struct SidConfig {
+    /// SID chip model to emulate (default: MOS 6581).
+    pub chip_model: ChipModel,
+    /// Audio sampling method (default: `SamplingMethod::Fast`).
+    pub sampling_method: SamplingMethod,
+    /// SID clock frequency in Hz (default: PAL C64 clock).
+    pub clock_freq: u32,
+    /// Output sample rate in Hz (default: 44.1kHz).
+    pub sample_freq: u32,
+}
+
+#[cfg(all(feature = "alloc", feature = "std"))]
+impl Default for SidConfig {
+    fn default() -> Self {
+        SidConfig {
+            chip_model: ChipModel::default(),
+            sampling_method: SamplingMethod::Fast,
+            clock_freq: DEFAULT_CLOCK_FREQ,
+            sample_freq: DEFAULT_SAMPLE_FREQ,
+        }
+    }
+}
+
 impl Sid {
+    /// Construct a SID with default PAL clock, 44.1kHz sample rate, and fast sampling.
     pub fn new(chip_model: ChipModel) -> Self {
+        Self::from_config_defaults(
+            chip_model,
+            SamplingMethod::Fast,
+            DEFAULT_CLOCK_FREQ,
+            DEFAULT_SAMPLE_FREQ,
+        )
+    }
+
+    #[inline]
+    fn from_config_defaults(
+        chip_model: ChipModel,
+        sampling_method: SamplingMethod,
+        clock_freq: u32,
+        sample_freq: u32,
+    ) -> Self {
         let synth = Synth::new(chip_model);
         let mut sid = Sid {
             sampler: Sampler::new(synth),
             bus_value: 0,
             bus_value_ttl: 0,
         };
-        sid.set_sampling_parameters(
-            SamplingMethod::Fast,
-            DEFAULT_CLOCK_FREQ,
-            DEFAULT_SAMPLE_FREQ,
-        )
-        .expect("default sampling parameters are valid");
+        sid.set_sampling_parameters(sampling_method, clock_freq, sample_freq)
+            .expect("default sampling parameters are valid");
         sid
+    }
+
+    /// Build a SID instance from a configuration.
+    #[cfg(all(feature = "alloc", feature = "std"))]
+    /// Construct a SID from a full configuration.
+    pub fn from_config(config: SidConfig) -> Self {
+        Self::from_config_defaults(
+            config.chip_model,
+            config.sampling_method,
+            config.clock_freq,
+            config.sample_freq,
+        )
     }
 
     /// Toggles between standard and EKV transistor model filter.
@@ -170,6 +225,7 @@ impl Sid {
         Ok(())
     }
 
+    /// Advance the SID by one clock cycle.
     pub fn clock(&mut self) {
         // Age bus value.
         if self.bus_value_ttl > 0 {
@@ -182,6 +238,7 @@ impl Sid {
         self.sampler.synth.clock();
     }
 
+    /// Advance the SID by `delta` cycles.
     pub fn clock_delta(&mut self, delta: u32) {
         // Age bus value.
         if self.bus_value_ttl >= delta {
@@ -226,16 +283,19 @@ impl Sid {
         self.sampler.synth.filter_impl.get_filter_curve()
     }
 
+    /// Feed an external audio input sample.
     pub fn input(&mut self, sample: i32) {
         // Voice outputs are 20 bits. Scale up to match three voices in order
         // to facilitate simulation of the MOS8580 "digi boost" hardware hack.
         self.sampler.synth.ext_in = (sample << 4) * 3;
     }
 
+    /// Current mixed audio sample (16-bit).
     pub fn output(&self) -> i16 {
         self.sampler.synth.output()
     }
 
+    /// Reset all internal SID state.
     pub fn reset(&mut self) {
         self.sampler.reset();
         self.bus_value = 0;
@@ -262,12 +322,32 @@ impl Sid {
         self.sampler.clock(delta, buffer, interleave)
     }
 
+    /// Fill the provided buffer with up to `buffer.len() / interleave` samples.
+    ///
+    /// This helper produces audio frames without requiring the caller to
+    /// compute SID clock deltas; it advances the chip as needed to fill the
+    /// buffer and returns the number of frames written.
+    ///
+    /// Internally uses a large delta, so callers should interleave regular
+    /// calls (e.g., once per audio callback) instead of relying on one huge
+    /// invocation.
+    pub fn sample_frames(&mut self, buffer: &mut [i16], interleave: usize) -> usize {
+        let frames = buffer.len() / interleave;
+        if frames == 0 {
+            return 0;
+        }
+        let (written, _remaining) = self.sample(u32::MAX, buffer, interleave);
+        written
+    }
+
     // -- Device I/O
 
+    /// Read a SID register (applies bus decay).
     pub fn read(&self, reg: u8) -> u8 {
         self.sampler.synth.read(reg, self.bus_value)
     }
 
+    /// Write a SID register.
     pub fn write(&mut self, reg: u8, value: u8) {
         self.bus_value = value;
         self.bus_value_ttl = BUS_VALUE_TTL;
@@ -276,6 +356,7 @@ impl Sid {
 
     // -- State
 
+    /// Snapshot full SID state (registers and internals).
     pub fn read_state(&self) -> State {
         let mut state = State {
             sid_register: [0; 32],
@@ -334,6 +415,7 @@ impl Sid {
         state
     }
 
+    /// Restore full SID state (registers and internals).
     pub fn write_state(&mut self, state: &State) {
         for i in 0..0x19 {
             self.write(i, state.sid_register[i as usize]);

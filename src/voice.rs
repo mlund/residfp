@@ -35,17 +35,19 @@ const WAVE_ZERO: i32 = 0x0380;
 /// this follows from the DC level in the waveform output.
 const VOICE_DC: i32 = 0x800 * 0xff;
 
+/// A single SID voice combining waveform and envelope generators.
 #[derive(Clone)]
 pub struct Voice {
     // Configuration
     wave_zero: i32,
     voice_dc: i32,
     // Generators
-    pub envelope: EnvelopeGenerator,
-    pub wave: WaveformGenerator,
+    pub(crate) envelope: EnvelopeGenerator,
+    pub(crate) wave: WaveformGenerator,
 }
 
 impl Voice {
+    /// Create a voice for the given chip model.
     pub fn new(chip_model: ChipModel) -> Self {
         match chip_model {
             ChipModel::Mos6581 => Voice {
@@ -64,6 +66,7 @@ impl Voice {
         }
     }
 
+    /// Update envelope and waveform control registers.
     pub fn set_control(&mut self, value: u8) {
         self.envelope.set_control(value);
         self.wave.set_control(value);
@@ -99,6 +102,7 @@ impl Voice {
             + self.voice_dc
     }
 
+    /// Reset waveform and envelope state.
     pub fn reset(&mut self) {
         self.envelope.reset();
         self.wave.reset();
@@ -106,10 +110,12 @@ impl Voice {
 }
 
 impl Syncable<&'_ Voice> {
+    /// Output mixed waveform*envelope for the main voice with sync applied.
     pub fn output(&self) -> i32 {
         self.main.output(Some(&self.sync_source.wave))
     }
 
+    /// Output using DAC lookup tables for nonlinearity modeling.
     pub fn output_dac(&self, wav_dac: &[f32], env_dac: &[f32]) -> i32 {
         self.main
             .output_dac(Some(&self.sync_source.wave), wav_dac, env_dac)
@@ -117,6 +123,7 @@ impl Syncable<&'_ Voice> {
 }
 
 impl<'a> Syncable<&'a Voice> {
+    /// Access waveform generators for sync relationships (immutable).
     pub fn wave(self) -> Syncable<&'a WaveformGenerator> {
         Syncable {
             main: &self.main.wave,
@@ -127,6 +134,7 @@ impl<'a> Syncable<&'a Voice> {
 }
 
 impl<'a> Syncable<&'a mut Voice> {
+    /// Access waveform generators for sync relationships (mutable).
     pub fn wave(self) -> Syncable<&'a mut WaveformGenerator> {
         Syncable {
             main: &mut self.main.wave,

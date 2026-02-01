@@ -37,6 +37,7 @@ const FLOATING_OUTPUT_FADE_8580: u32 = 50000; // interval between fade steps
 /// when TEST is cleared.
 /// The noise waveform is taken from intermediate bits of a 23 bit shift
 /// register. This register is clocked by bit 19 of the accumulator.
+/// SID voice waveform generator and noise LFSR.
 #[derive(Clone)]
 pub struct WaveformGenerator {
     // Configuration
@@ -49,7 +50,9 @@ pub struct WaveformGenerator {
     sync: bool,
     test: bool,
     // Runtime State
+    /// Oscillator accumulator (24-bit).
     pub acc: u32,
+    /// Noise shift register (23-bit).
     pub shift: u32,
     /// Latched shift register value during pipeline phase 1
     shift_latch: u32,
@@ -70,13 +73,18 @@ pub struct WaveformGenerator {
     wave_st: &'static [u8; 4096],
 }
 
+/// Wrapper carrying a voice with its sync source/destination references.
 pub struct Syncable<T> {
+    /// Primary item being observed/clocked.
     pub main: T,
+    /// Source that can sync-reset `main`.
     pub sync_source: T,
+    /// Destination that can be reset by `main`.
     pub sync_dest: T,
 }
 
 impl WaveformGenerator {
+    /// Create a waveform generator for the specified chip model.
     pub fn new(chip_model: ChipModel) -> Self {
         let (wave_ps, wave_pst, wave_pt, wave_st) = match chip_model {
             ChipModel::Mos6581 => (
@@ -117,10 +125,12 @@ impl WaveformGenerator {
         waveform
     }
 
+    /// Current accumulator value (24-bit).
     pub fn get_acc(&self) -> u32 {
         self.acc
     }
 
+    /// Current control register value (waveform/sync/ring/test bits).
     pub fn get_control(&self) -> u8 {
         let mut value = 0u8;
         value.set_bit(1, self.sync);
@@ -129,42 +139,54 @@ impl WaveformGenerator {
         value | (self.waveform << 4)
     }
 
+    /// Current oscillator frequency.
     pub fn get_frequency(&self) -> u16 {
         self.frequency
     }
 
+    /// High byte of oscillator frequency.
     pub fn get_frequency_hi(&self) -> u8 {
         (self.frequency >> 8) as u8
     }
 
+    /// Low byte of oscillator frequency.
     pub fn get_frequency_lo(&self) -> u8 {
         (self.frequency & 0x00ff) as u8
     }
 
+    /// High byte of pulse width.
     pub fn get_pulse_width_hi(&self) -> u8 {
         (self.pulse_width >> 8) as u8
     }
 
+    /// Low byte of pulse width.
     pub fn get_pulse_width_lo(&self) -> u8 {
         (self.pulse_width & 0x00ff) as u8
     }
 
+    /// Current noise shift register contents.
     pub fn get_shift(&self) -> u32 {
         self.shift
     }
 
+    /// Returns true if sync is enabled.
     pub fn get_sync(&self) -> bool {
         self.sync
     }
 
+    /// Returns true if the accumulator MSB is rising this cycle.
     pub fn is_msb_rising(&self) -> bool {
         self.msb_rising
     }
 
+    /// Set accumulator to an absolute value (used when restoring state).
+    /// Set accumulator to an absolute value (used when restoring state).
     pub fn set_acc(&mut self, value: u32) {
         self.acc = value;
     }
 
+    /// Update control register bits (waveform, sync, ring, test).
+    /// Update control register bits (waveform, sync, ring, test).
     pub fn set_control(&mut self, value: u8) {
         let waveform_prev = self.waveform;
         self.waveform = (value >> 4) & 0x0f;
@@ -209,27 +231,57 @@ impl WaveformGenerator {
         self.test = test;
     }
 
+    /// Set high byte of oscillator frequency.
+    /// Set high byte of oscillator frequency.
     pub fn set_frequency_hi(&mut self, value: u8) {
         let result = (((value as u16) << 8) & 0xff00) | (self.frequency & 0x00ff);
         self.frequency = result;
     }
 
+    /// Set low byte of oscillator frequency.
     pub fn set_frequency_lo(&mut self, value: u8) {
         let result = (self.frequency & 0xff00) | ((value as u16) & 0x00ff);
         self.frequency = result;
     }
 
+    /// Set high byte of pulse width (12-bit value).
     pub fn set_pulse_width_hi(&mut self, value: u8) {
         let result = (((value as u16) << 8) & 0x0f00) | (self.pulse_width & 0x00ff);
         self.pulse_width = result;
     }
 
+    /// Set low byte of pulse width (12-bit value).
     pub fn set_pulse_width_lo(&mut self, value: u8) {
         let result = (self.pulse_width & 0x0f00) | ((value as u16) & 0x00ff);
         self.pulse_width = result;
     }
 
+    /// Enable/disable hard sync.
+    pub fn set_sync(&mut self, value: bool) {
+        self.sync = value;
+    }
+
+    /// Enable/disable ring modulation.
+    pub fn set_ring(&mut self, value: bool) {
+        self.ring = value;
+    }
+
+    /// Set or clear the TEST bit (resets accumulator and noise LFSR).
+    pub fn set_test(&mut self, value: bool) {
+        if value {
+            self.acc = 0;
+            self.shift = 0;
+            // Flush shift pipeline
+            self.shift_pipeline = 0;
+        } else {
+            self.shift = SHIFT_REGISTER_RESET;
+        }
+        self.test = value;
+    }
+
     #[inline]
+    /// Advance oscillator by one clock cycle.
+    /// Advance oscillator by one clock cycle, updating noise LFSR pipeline.
     pub fn clock(&mut self) {
         if self.test {
             // Latch the test bit value for shift phase 2
@@ -300,6 +352,7 @@ impl WaveformGenerator {
     }
 
     #[inline]
+    /// Advance oscillator by `delta` clock cycles.
     pub fn clock_delta(&mut self, delta: u32) {
         if !self.test {
             let acc_prev = self.acc;
@@ -364,6 +417,9 @@ impl WaveformGenerator {
         self.waveform_output.get()
     }
 
+    /// Reset oscillator state to power-on defaults.
+    /// Reset oscillator state and floating DAC TTL.
+    /// Reset oscillator state and floating DAC TTL.
     pub fn reset(&mut self) {
         self.frequency = 0;
         self.pulse_width = 0;
@@ -480,6 +536,7 @@ impl WaveformGenerator {
 }
 
 impl Syncable<&'_ WaveformGenerator> {
+    /// Read combined OSC3 register value (MSB of accumulator).
     pub fn read_osc(&self) -> u8 {
         (self.main.output(Some(self.sync_source)) >> 4) as u8
     }

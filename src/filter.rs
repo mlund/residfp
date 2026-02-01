@@ -14,6 +14,7 @@ use super::ChipModel;
 ///
 /// Both the standard spline-based filter and the EKV transistor model
 /// implement this trait, enabling runtime selection between them.
+/// Common interface for SID filter implementations.
 pub trait FilterBehavior {
     /// Clock the filter for one cycle with voice and external inputs.
     fn clock(&mut self, v1: i32, v2: i32, v3: i32, ext: i32);
@@ -30,13 +31,21 @@ pub trait FilterBehavior {
     /// Get current filter curve parameter.
     fn get_filter_curve(&self) -> f64;
     // Register access
+    /// Filter cutoff low byte.
     fn get_fc_lo(&self) -> u8;
+    /// Filter cutoff high byte.
     fn get_fc_hi(&self) -> u8;
+    /// Filter resonance/routing register.
     fn get_res_filt(&self) -> u8;
+    /// Mode/volume register.
     fn get_mode_vol(&self) -> u8;
+    /// Set filter cutoff low byte.
     fn set_fc_lo(&mut self, value: u8);
+    /// Set filter cutoff high byte.
     fn set_fc_hi(&mut self, value: u8);
+    /// Set resonance/routing register.
     fn set_res_filt(&mut self, value: u8);
+    /// Set mode/volume register.
     fn set_mode_vol(&mut self, value: u8);
 }
 
@@ -129,6 +138,7 @@ pub fn mix_filter_output(vhp: i32, vbp: i32, vlp: i32, hp_bp_lp: u8) -> i32 {
 /// input to output, a MOS inverter can be made to act like an op-amp for
 /// small signals centered around the switching threshold.
 #[derive(Clone, Copy)]
+/// Standard SID multimode filter (6581/8580) with curve tuning.
 pub struct Filter {
     // Configuration
     chip_model: ChipModel,
@@ -143,9 +153,13 @@ pub struct Filter {
     hp_bp_lp: u8,
     vol: u8,
     // Runtime State
+    /// Highpass integrator state.
     pub vhp: i32,
+    /// Bandpass integrator state.
     pub vbp: i32,
+    /// Lowpass integrator state.
     pub vlp: i32,
+    /// Non-filtered mixer output (pre-filter DC offset removed).
     pub vnf: i32,
     // Cutoff Freq/Res
     mixer_dc: i32,
@@ -158,6 +172,7 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// Create a filter for the given chip model with default curve.
     pub fn new(chip_model: ChipModel) -> Self {
         let f0 = match chip_model {
             ChipModel::Mos6581 => &SPLINE6581_F0,

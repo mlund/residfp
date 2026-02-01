@@ -106,13 +106,14 @@ pub struct DacTables {
     pub env: Box<[f32]>,
 }
 
+/// SID synthesizer: voices, filters, DACs, and mixing.
 #[derive(Clone)]
 pub struct Synth {
-    pub ext_filter: ExternalFilter,
+    pub(crate) ext_filter: ExternalFilter,
     /// Filter implementation (standard or EKV)
-    pub filter_impl: FilterImpl,
-    pub voices: [Voice; 3],
-    pub ext_in: i32,
+    pub(crate) filter_impl: FilterImpl,
+    pub(crate) voices: [Voice; 3],
+    pub(crate) ext_in: i32,
     /// DAC nonlinearity tables for accurate R-2R ladder emulation
     pub dac: DacTables,
     /// Chip model for filter switching
@@ -132,6 +133,7 @@ fn rotate3<T>([a, b, c]: [T; 3], i: usize) -> [T; 3] {
 }
 
 impl Synth {
+    /// Create a synthesizer for the given chip model with default filter/DAC state.
     pub fn new(chip_model: ChipModel) -> Self {
         Synth {
             ext_filter: ExternalFilter::new(chip_model),
@@ -185,6 +187,7 @@ impl Synth {
         matches!(self.filter_impl, FilterImpl::Ekv(_))
     }
 
+    /// Return a voice with its sync source/destination rotated for index `i`.
     pub fn syncable_voice(&self, i: usize) -> Syncable<&'_ Voice> {
         let [a, b, c] = &self.voices;
         let [main, sync_dest, sync_source] = rotate3([a, b, c], i);
@@ -195,6 +198,7 @@ impl Synth {
         }
     }
 
+    /// Return a mutable voice with its sync source/destination rotated for index `i`.
     pub fn syncable_voice_mut(&mut self, i: usize) -> Syncable<&'_ mut Voice> {
         let [a, b, c] = &mut self.voices;
         let [main, sync_dest, sync_source] = rotate3([a, b, c], i);
@@ -205,6 +209,7 @@ impl Synth {
         }
     }
 
+    /// Clock all voices and filters by one SID cycle.
     pub fn clock(&mut self) {
         // Clock amplitude modulators.
         for i in 0..3 {
@@ -232,6 +237,7 @@ impl Synth {
         self.ext_filter.clock(self.filter_impl.output());
     }
 
+    /// Clock voices and filters by multiple cycles, preserving hard-sync timing.
     pub fn clock_delta(&mut self, delta: u32) {
         // Clock amplitude modulators.
         for i in 0..3 {
@@ -292,6 +298,8 @@ impl Synth {
             .clock_delta(delta, self.filter_impl.output());
     }
 
+    /// Mixed audio output (16-bit) after external filter.
+    /// Current mixed audio sample (16-bit) after filters.
     pub fn output(&self) -> i16 {
         // Read sample from audio output.
         let sample = self.ext_filter.output() / SAMPLES_PER_OUTPUT as i32;
@@ -304,6 +312,7 @@ impl Synth {
         }
     }
 
+    /// Reset synthesizer state (voices, filter, external filter).
     pub fn reset(&mut self) {
         self.ext_filter.reset();
         self.filter_impl.reset();
@@ -313,6 +322,7 @@ impl Synth {
         self.ext_in = 0;
     }
 
+    /// Read a SID register, applying bus decay rules.
     pub fn read(&self, reg: u8, bus_value: u8) -> u8 {
         match reg {
             reg::POTX => 0xff,
@@ -323,6 +333,7 @@ impl Synth {
         }
     }
 
+    /// Write a SID register.
     pub fn write(&mut self, reg: u8, value: u8) {
         match reg {
             reg::FREQLO1 => self.voices[0].wave.set_frequency_lo(value),
