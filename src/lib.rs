@@ -30,7 +30,6 @@ pub mod filter;
 pub mod filter_ekv;
 pub mod sampler;
 mod sid;
-pub mod spline;
 /// Core SID synthesizer combining voices, filter, and routing.
 pub mod synth;
 /// Voice primitives (waveform + envelope).
