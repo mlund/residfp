@@ -102,17 +102,17 @@ const OPAMP_VOLTAGE: [(f64, f64); 33] = [
 /// Memory footprint: ~388KB for lookup tables.
 pub struct FilterModelConfig {
     /// VCR gate voltage lookup table (65536 x u16 = 128KB).
-    vcr_n_vg: Box<[u16; 65536]>,
+    vcr_n_vg: Box<[u16]>,
 
     /// VCR current term lookup table (65536 x f64 = 512KB before uCox scaling).
     /// Stored as f64 and multiplied by uCox at runtime for filter range adjustment.
-    vcr_n_ids_term: Box<[f64; 65536]>,
+    vcr_n_ids_term: Box<[f64]>,
 
     /// Reverse op-amp transfer function (65536 x u16 = 128KB).
-    opamp_rev: Box<[u16; 65536]>,
+    opamp_rev: Box<[u16]>,
 
     /// Filter cutoff frequency DAC lookup (2048 x u16 = 4KB).
-    f0_dac: Box<[u16; 2048]>,
+    f0_dac: Box<[u16]>,
 
     /// Fixed-point scale factor: norm * UINT16_MAX.
     #[allow(dead_code)]
@@ -354,7 +354,7 @@ fn to_u16(x: f64) -> u16 {
 ///
 /// Maps capacitor voltage to op-amp input voltage using monotone cubic spline
 /// interpolation of the measured op-amp voltage data.
-fn build_opamp_rev_table(n16: f64, vmin: f64) -> Box<[u16; 65536]> {
+fn build_opamp_rev_table(n16: f64, vmin: f64) -> Box<[u16]> {
     // Scale op-amp voltage data for spline
     let scaled: alloc::vec::Vec<Point> = OPAMP_VOLTAGE
         .iter()
@@ -368,14 +368,20 @@ fn build_opamp_rev_table(n16: f64, vmin: f64) -> Box<[u16; 65536]> {
 
     let spline = MonotoneSpline::new(&scaled);
 
-    let mut table = Box::new([0u16; 65536]);
-    for x in 0..65536 {
-        let (y, _dy) = spline.evaluate(x as f64);
-        // Clamp negative values (can occur when interpolating outside range)
-        table[x] = if y > 0.0 { to_u16(y) } else { 0 };
-    }
+    // Use Vec::collect for direct heap allocation (avoids stack overflow)
+    let table: alloc::vec::Vec<u16> = (0..65536)
+        .map(|x| {
+            let (y, _dy) = spline.evaluate(x as f64);
+            // Clamp negative values (can occur when interpolating outside range)
+            if y > 0.0 {
+                to_u16(y)
+            } else {
+                0
+            }
+        })
+        .collect();
 
-    table
+    table.into_boxed_slice()
 }
 
 /// Builds the VCR gate voltage lookup table.
@@ -383,17 +389,19 @@ fn build_opamp_rev_table(n16: f64, vmin: f64) -> Box<[u16; 65536]> {
 /// vcr_nVg[i] = nVddt - sqrt(i << 16)
 ///
 /// The table index is right-shifted 16 times to fit in 16 bits.
-fn build_vcr_n_vg_table(n16: f64, vddt: f64, vmin: f64) -> Box<[u16; 65536]> {
+fn build_vcr_n_vg_table(n16: f64, vddt: f64, vmin: f64) -> Box<[u16]> {
     let n_vddt = n16 * (vddt - vmin);
 
-    let mut table = Box::new([0u16; 65536]);
-    for i in 0..65536u32 {
-        // Argument to sqrt is multiplied by (1 << 16) due to table indexing
-        let sqrt_val = ((i as u64) << 16) as f64;
-        table[i as usize] = to_u16(n_vddt - sqrt_val.sqrt());
-    }
+    // Use Vec::collect for direct heap allocation (avoids stack overflow)
+    let table: alloc::vec::Vec<u16> = (0u64..65536)
+        .map(|i| {
+            // Argument to sqrt is multiplied by (1 << 16) due to table indexing
+            let sqrt_val = (i << 16) as f64;
+            to_u16(n_vddt - sqrt_val.sqrt())
+        })
+        .collect();
 
-    table
+    table.into_boxed_slice()
 }
 
 /// Builds the VCR current term lookup table (without uCox scaling).
@@ -403,8 +411,7 @@ fn build_vcr_n_vg_table(n16: f64, vddt: f64, vmin: f64) -> Box<[u16; 65536]> {
 ///   Is = (2 * Ut^2) * W/L
 ///   if = ln^2(1 + exp((k*(Vg - Vt) - Vs) / (2*Ut)))
 ///   ir = ln^2(1 + exp((k*(Vg - Vt) - Vd) / (2*Ut)))
-#[allow(clippy::large_stack_frames)]
-fn build_vcr_n_ids_term_table(n16: f64, norm: f64, c: f64, wl_vcr: f64) -> Box<[f64; 65536]> {
+fn build_vcr_n_ids_term_table(n16: f64, norm: f64, c: f64, wl_vcr: f64) -> Box<[f64]> {
     // Moderate inversion characteristic current (without uCox)
     let is = 2.0 * UT * UT * wl_vcr;
 
@@ -414,32 +421,36 @@ fn build_vcr_n_ids_term_table(n16: f64, norm: f64, c: f64, wl_vcr: f64) -> Box<[
 
     let r_n16_2ut = 1.0 / (n16 * 2.0 * UT);
 
-    let mut table = Box::new([0.0f64; 65536]);
-    for i in 0..65536 {
-        // kVgt_Vx = k*(Vg - Vt) - Vx, offset by INT16_MIN
-        let k_vgt_vx = (i as i32) + i16::MIN as i32;
-        let log_term = (k_vgt_vx as f64 * r_n16_2ut).exp().ln_1p();
-        // Scaled by m * 2^15 (before uCox multiplication)
-        table[i] = n_is * log_term * log_term;
-    }
+    // Use Vec::collect for direct heap allocation (avoids stack overflow)
+    let table: alloc::vec::Vec<f64> = (0i32..65536)
+        .map(|i| {
+            // kVgt_Vx = k*(Vg - Vt) - Vx, offset by INT16_MIN
+            let k_vgt_vx = i + i16::MIN as i32;
+            let log_term = (k_vgt_vx as f64 * r_n16_2ut).exp().ln_1p();
+            // Scaled by m * 2^15 (before uCox multiplication)
+            n_is * log_term * log_term
+        })
+        .collect();
 
-    table
+    table.into_boxed_slice()
 }
 
 /// Builds the filter cutoff frequency DAC lookup table.
-fn build_f0_dac_table(n16: f64, vmin: f64, dac_zero: f64, dac_scale: f64) -> Box<[u16; 2048]> {
+fn build_f0_dac_table(n16: f64, vmin: f64, dac_zero: f64, dac_scale: f64) -> Box<[u16]> {
     // Use the existing DAC model to get normalized bit contributions
     let dac_bits = build_dac_table(DAC_BITS, ChipModel::Mos6581);
 
-    let mut table = Box::new([0u16; 2048]);
-    for i in 0..(1 << DAC_BITS) {
-        // DAC output voltage
-        let fcd = dac_bits[i] as f64;
-        let voltage = dac_zero + fcd * dac_scale;
-        table[i] = to_u16(n16 * (voltage - vmin));
-    }
+    // Use Vec for heap allocation for consistency with other table builders
+    let table: alloc::vec::Vec<u16> = (0..(1 << DAC_BITS))
+        .map(|i| {
+            // DAC output voltage
+            let fcd = dac_bits[i] as f64;
+            let voltage = dac_zero + fcd * dac_scale;
+            to_u16(n16 * (voltage - vmin))
+        })
+        .collect();
 
-    table
+    table.into_boxed_slice()
 }
 
 #[cfg(test)]
