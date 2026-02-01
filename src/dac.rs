@@ -100,6 +100,7 @@ fn build_dac_bits(bits: usize, chip_model: ChipModel) -> Vec<f64> {
 }
 
 /// Computes DAC output for a single input value.
+#[allow(dead_code)]
 pub fn compute_dac_output(input: u32, bits: usize, chip_model: ChipModel) -> f32 {
     let dac_bits = build_dac_bits(bits, chip_model);
     let leakage = chip_model.leakage();

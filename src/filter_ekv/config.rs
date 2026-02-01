@@ -31,6 +31,7 @@ use std::sync::OnceLock;
 
 /// Global singleton for FilterModelConfig (std feature only).
 #[cfg(feature = "std")]
+#[allow(dead_code)]
 static CONFIG: OnceLock<FilterModelConfig> = OnceLock::new();
 
 use super::opamp::{MonotoneSpline, Point};
@@ -114,6 +115,7 @@ pub struct FilterModelConfig {
     f0_dac: Box<[u16; 2048]>,
 
     /// Fixed-point scale factor: norm * UINT16_MAX.
+    #[allow(dead_code)]
     n16: f64,
 
     /// Normalized Vdd - Vth.
@@ -146,6 +148,7 @@ impl FilterModelConfig {
     /// # Arguments
     /// * `curve` - Filter curve from 0.0 (dark) to 1.0 (bright)
     #[cfg(feature = "std")]
+    #[allow(dead_code)]
     pub fn try_init(curve: f64) -> bool {
         CONFIG.set(Self::with_curve(curve)).is_ok()
     }
@@ -155,6 +158,7 @@ impl FilterModelConfig {
     /// # Panics
     /// Panics if already initialized. Prefer `try_init()` for fallible initialization.
     #[cfg(feature = "std")]
+    #[allow(dead_code)]
     pub fn init(curve: f64) {
         if !Self::try_init(curve) {
             panic!("FilterModelConfig::init() already called");
@@ -163,6 +167,7 @@ impl FilterModelConfig {
 
     /// Returns the global singleton if initialized.
     #[cfg(feature = "std")]
+    #[allow(dead_code)]
     pub fn try_global() -> Option<&'static FilterModelConfig> {
         CONFIG.get()
     }
@@ -172,6 +177,7 @@ impl FilterModelConfig {
     /// # Panics
     /// Panics if `init()` was not called. Prefer `try_global()` for fallible access.
     #[cfg(feature = "std")]
+    #[allow(dead_code)]
     pub fn global() -> &'static FilterModelConfig {
         Self::try_global().expect("FilterModelConfig::init() must be called first")
     }
@@ -319,6 +325,7 @@ impl FilterModelConfig {
 
     /// Returns fixed-point scale factor.
     #[inline]
+    #[allow(dead_code)]
     pub fn get_n16(&self) -> f64 {
         self.n16
     }

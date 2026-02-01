@@ -116,7 +116,8 @@ pub struct Synth {
     pub(crate) ext_in: i32,
     /// DAC nonlinearity tables for accurate R-2R ladder emulation
     pub dac: DacTables,
-    /// Chip model for filter switching
+    /// Chip model for filter switching (used by ekv-filter feature)
+    #[allow(dead_code)]
     chip_model: ChipModel,
 }
 

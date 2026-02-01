@@ -18,17 +18,21 @@ extern crate alloc;
 extern crate std;
 #[cfg(all(feature = "alloc", feature = "std"))]
 extern crate std as alloc;
-pub mod dac;
+pub(crate) mod dac;
 mod data;
+/// ADSR envelope generator.
 pub mod envelope;
+/// External C64 audio output filter.
 pub mod external_filter;
-pub mod filter;
+pub(crate) mod filter;
 #[cfg(feature = "ekv-filter")]
-pub mod filter_ekv;
+pub(crate) mod filter_ekv;
+/// Audio resampling and output generation.
 pub mod sampler;
 mod sid;
-pub mod synth;
-pub mod voice;
+pub(crate) mod synth;
+pub(crate) mod voice;
+/// Oscillator waveform generator.
 pub mod wave;
 
 /// Configuration for constructing a [`Sid`].
