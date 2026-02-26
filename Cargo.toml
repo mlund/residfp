@@ -1,7 +1,7 @@
 [package]
 name = "residfp"
 version = "1.1.1"
-edition = "2018"
+edition = "2024"
 authors = ["Sebastian Jastrzebski <sebby2k@gmail.com>"]
 description = "Port of libresidfp, a MOS6581/8580 SID emulator engine, to Rust"
 license = "GPL-3.0+"

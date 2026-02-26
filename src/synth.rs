@@ -7,6 +7,7 @@
 
 use alloc::boxed::Box;
 
+use super::ChipModel;
 use super::dac::build_dac_table;
 use super::external_filter::ExternalFilter;
 use super::filter::Filter;
@@ -16,7 +17,6 @@ use super::filter_ekv::Filter6581Ekv;
 use super::sid::reg;
 use super::voice::Voice;
 use super::wave::Syncable;
-use super::ChipModel;
 
 const OUTPUT_RANGE: u32 = 1 << 16;
 const OUTPUT_HALF: i32 = (OUTPUT_RANGE >> 1) as i32;

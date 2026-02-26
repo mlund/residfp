@@ -110,11 +110,7 @@ pub fn compute_dac_output(input: u32, bits: usize, chip_model: ChipModel) -> f32
         .enumerate()
         .map(|(i, &bit_value)| {
             let on = (input & (1 << i)) != 0;
-            if on {
-                bit_value
-            } else {
-                bit_value * leakage
-            }
+            if on { bit_value } else { bit_value * leakage }
         })
         .sum();
 
@@ -133,11 +129,7 @@ pub fn build_dac_table(bits: usize, chip_model: ChipModel) -> Vec<f32> {
                 .enumerate()
                 .map(|(i, &bit_value)| {
                     let on = (input & (1 << i)) != 0;
-                    if on {
-                        bit_value
-                    } else {
-                        bit_value * leakage
-                    }
+                    if on { bit_value } else { bit_value * leakage }
                 })
                 .sum();
             value as f32

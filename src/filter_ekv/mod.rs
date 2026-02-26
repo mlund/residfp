@@ -23,7 +23,7 @@ use alloc::boxed::Box;
 
 pub use self::config::FilterModelConfig;
 use self::integrator::Integrator6581;
-use super::filter::{mix_filter_output, route_voices, FilterBehavior};
+use super::filter::{FilterBehavior, mix_filter_output, route_voices};
 
 const MIXER_DC_6581: i32 = (-0xfff * 0xff / 18) >> 7;
 

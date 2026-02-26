@@ -2,8 +2,8 @@
 // Low-pass: R=10kOhm, C=1000pF (cutoff ~15.9kHz)
 // High-pass: R=10kOhm, C=10uF (cutoff ~1.6Hz, assumes 10kOhm load)
 
-use residfp::external_filter::ExternalFilter;
 use residfp::ChipModel;
+use residfp::external_filter::ExternalFilter;
 
 /// Single-cycle filter response follows first-order IIR curve
 #[test]

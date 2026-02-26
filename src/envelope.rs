@@ -351,15 +351,15 @@ mod tests {
     use super::*;
 
     fn new_envelope() -> EnvelopeGenerator {
-        let mut gen = EnvelopeGenerator::default();
-        gen.reset();
-        gen.envelope_counter = 0;
-        gen
+        let mut envelope = EnvelopeGenerator::default();
+        envelope.reset();
+        envelope.envelope_counter = 0;
+        envelope
     }
 
-    fn clock_n(gen: &mut EnvelopeGenerator, n: u32) {
+    fn clock_n(envelope: &mut EnvelopeGenerator, n: u32) {
         for _ in 0..n {
-            gen.clock();
+            envelope.clock();
         }
     }
 
@@ -367,18 +367,18 @@ mod tests {
     /// to wrap around 0x8000 before the next step occurs.
     #[test]
     fn adsr_delay_bug() {
-        let mut gen = new_envelope();
-        gen.set_attack_decay(0x70);
-        gen.set_control(0x01);
-        clock_n(&mut gen, 200);
+        let mut envelope = new_envelope();
+        envelope.set_attack_decay(0x70);
+        envelope.set_control(0x01);
+        clock_n(&mut envelope, 200);
 
-        assert_eq!(gen.read_env(), 0);
+        assert_eq!(envelope.read_env(), 0);
 
-        gen.set_attack_decay(0x20);
-        clock_n(&mut gen, 200);
+        envelope.set_attack_decay(0x20);
+        clock_n(&mut envelope, 200);
 
         assert_eq!(
-            gen.read_env(),
+            envelope.read_env(),
             0,
             "ADSR delay bug: counter must wrap 0x8000"
         );
@@ -387,22 +387,22 @@ mod tests {
     /// Counter wraps 0xff->0x00 via release->attack transition, then freezes.
     #[test]
     fn flip_ff_to_00() {
-        let mut gen = new_envelope();
-        gen.set_attack_decay(0x77);
-        gen.set_sustain_release(0x77);
-        gen.set_control(0x01);
+        let mut envelope = new_envelope();
+        envelope.set_attack_decay(0x77);
+        envelope.set_sustain_release(0x77);
+        envelope.set_control(0x01);
 
-        while gen.read_env() != 0xff {
-            gen.clock();
+        while envelope.read_env() != 0xff {
+            envelope.clock();
         }
 
-        gen.set_control(0x00);
-        clock_n(&mut gen, 3);
-        gen.set_control(0x01);
-        clock_n(&mut gen, 315);
+        envelope.set_control(0x00);
+        clock_n(&mut envelope, 3);
+        envelope.set_control(0x01);
+        clock_n(&mut envelope, 315);
 
         assert_eq!(
-            gen.read_env(),
+            envelope.read_env(),
             0,
             "Counter should wrap 0xff->0x00 and freeze"
         );
@@ -411,33 +411,33 @@ mod tests {
     /// Counter wraps 0x00->0xff via attack->release transition.
     #[test]
     fn flip_00_to_ff() {
-        let mut gen = new_envelope();
-        gen.hold_zero = true;
-        gen.set_attack_decay(0x77);
-        gen.set_sustain_release(0x77);
-        gen.clock();
+        let mut envelope = new_envelope();
+        envelope.hold_zero = true;
+        envelope.set_attack_decay(0x77);
+        envelope.set_sustain_release(0x77);
+        envelope.clock();
 
-        assert_eq!(gen.read_env(), 0);
+        assert_eq!(envelope.read_env(), 0);
 
-        gen.set_control(0x01);
-        clock_n(&mut gen, 3);
-        gen.set_control(0x00);
-        clock_n(&mut gen, 315);
+        envelope.set_control(0x01);
+        clock_n(&mut envelope, 3);
+        envelope.set_control(0x00);
+        clock_n(&mut envelope, 315);
 
-        assert_eq!(gen.read_env(), 0xff, "Counter should wrap 0x00->0xff");
+        assert_eq!(envelope.read_env(), 0xff, "Counter should wrap 0x00->0xff");
     }
 
     macro_rules! test_attack_rate {
         ($name:ident, $attack:expr, $period:expr) => {
             #[test]
             fn $name() {
-                let mut gen = new_envelope();
-                gen.set_attack_decay($attack << 4);
-                gen.set_control(0x01);
+                let mut envelope = new_envelope();
+                envelope.set_attack_decay($attack << 4);
+                envelope.set_control(0x01);
 
                 let mut cycles = 0u32;
-                while gen.read_env() == 0 && cycles < 100_000 {
-                    gen.clock();
+                while envelope.read_env() == 0 && cycles < 100_000 {
+                    envelope.clock();
                     cycles += 1;
                 }
 

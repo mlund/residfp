@@ -240,11 +240,7 @@ impl TwoPassResampler {
     /// Normalized sinc function: sin(x)/x, with sinc(0) = 1.
     #[inline]
     fn sinc(x: f64) -> f64 {
-        if x.abs() >= 1e-8 {
-            x.sin() / x
-        } else {
-            1.0
-        }
+        if x.abs() >= 1e-8 { x.sin() / x } else { 1.0 }
     }
 
     /// Store sample in ring buffer with duplication for wraparound optimization.

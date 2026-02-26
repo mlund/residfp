@@ -35,8 +35,8 @@ use std::sync::OnceLock;
 static CONFIG: OnceLock<FilterModelConfig> = OnceLock::new();
 
 use super::opamp::{MonotoneSpline, Point};
-use crate::dac::build_dac_table;
 use crate::ChipModel;
+use crate::dac::build_dac_table;
 
 /// Number of bits in the filter cutoff frequency DAC.
 const DAC_BITS: usize = 11;
@@ -373,11 +373,7 @@ fn build_opamp_rev_table(n16: f64, vmin: f64) -> Box<[u16]> {
         .map(|x| {
             let (y, _dy) = spline.evaluate(x as f64);
             // Clamp negative values (can occur when interpolating outside range)
-            if y > 0.0 {
-                to_u16(y)
-            } else {
-                0
-            }
+            if y > 0.0 { to_u16(y) } else { 0 }
         })
         .collect();
 

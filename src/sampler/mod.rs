@@ -21,8 +21,8 @@ mod two_pass;
 
 pub use soft_clip::soft_clip;
 
-use crate::synth::Synth;
 use crate::SamplingError;
+use crate::synth::Synth;
 
 use wide::{i16x16, i32x8};
 
@@ -523,35 +523,35 @@ impl Sampler {
         let mut fs = &fir[..len];
         let mut ss = &sample[..len];
         // 4 accumulators hide instruction latency
-        let mut v1 = _mm256_set1_epi32(0);
-        let mut v2 = _mm256_set1_epi32(0);
-        let mut v3 = _mm256_set1_epi32(0);
-        let mut v4 = _mm256_set1_epi32(0);
+        let mut v1 = unsafe { _mm256_set1_epi32(0) };
+        let mut v2 = unsafe { _mm256_set1_epi32(0) };
+        let mut v3 = unsafe { _mm256_set1_epi32(0) };
+        let mut v4 = unsafe { _mm256_set1_epi32(0) };
         while fs.len() >= 64 {
-            let sv1 = _mm256_loadu_si256(ss.as_ptr() as *const _);
-            let sv2 = _mm256_loadu_si256((&ss[16..]).as_ptr() as *const _);
-            let sv3 = _mm256_loadu_si256((&ss[32..]).as_ptr() as *const _);
-            let sv4 = _mm256_loadu_si256((&ss[48..]).as_ptr() as *const _);
-            let fv1 = _mm256_loadu_si256(fs.as_ptr() as *const _);
-            let fv2 = _mm256_loadu_si256((&fs[16..]).as_ptr() as *const _);
-            let fv3 = _mm256_loadu_si256((&fs[32..]).as_ptr() as *const _);
-            let fv4 = _mm256_loadu_si256((&fs[48..]).as_ptr() as *const _);
-            let prod1 = _mm256_madd_epi16(sv1, fv1);
-            let prod2 = _mm256_madd_epi16(sv2, fv2);
-            let prod3 = _mm256_madd_epi16(sv3, fv3);
-            let prod4 = _mm256_madd_epi16(sv4, fv4);
-            v1 = _mm256_add_epi32(v1, prod1);
-            v2 = _mm256_add_epi32(v2, prod2);
-            v3 = _mm256_add_epi32(v3, prod3);
-            v4 = _mm256_add_epi32(v4, prod4);
+            let sv1 = unsafe { _mm256_loadu_si256(ss.as_ptr() as *const _) };
+            let sv2 = unsafe { _mm256_loadu_si256((&ss[16..]).as_ptr() as *const _) };
+            let sv3 = unsafe { _mm256_loadu_si256((&ss[32..]).as_ptr() as *const _) };
+            let sv4 = unsafe { _mm256_loadu_si256((&ss[48..]).as_ptr() as *const _) };
+            let fv1 = unsafe { _mm256_loadu_si256(fs.as_ptr() as *const _) };
+            let fv2 = unsafe { _mm256_loadu_si256((&fs[16..]).as_ptr() as *const _) };
+            let fv3 = unsafe { _mm256_loadu_si256((&fs[32..]).as_ptr() as *const _) };
+            let fv4 = unsafe { _mm256_loadu_si256((&fs[48..]).as_ptr() as *const _) };
+            let prod1 = unsafe { _mm256_madd_epi16(sv1, fv1) };
+            let prod2 = unsafe { _mm256_madd_epi16(sv2, fv2) };
+            let prod3 = unsafe { _mm256_madd_epi16(sv3, fv3) };
+            let prod4 = unsafe { _mm256_madd_epi16(sv4, fv4) };
+            v1 = unsafe { _mm256_add_epi32(v1, prod1) };
+            v2 = unsafe { _mm256_add_epi32(v2, prod2) };
+            v3 = unsafe { _mm256_add_epi32(v3, prod3) };
+            v4 = unsafe { _mm256_add_epi32(v4, prod4) };
             fs = &fs[64..];
             ss = &ss[64..];
         }
-        v1 = _mm256_add_epi32(v1, v2);
-        v3 = _mm256_add_epi32(v3, v4);
-        v1 = _mm256_add_epi32(v1, v3);
+        v1 = unsafe { _mm256_add_epi32(v1, v2) };
+        v3 = unsafe { _mm256_add_epi32(v3, v4) };
+        v1 = unsafe { _mm256_add_epi32(v1, v3) };
         let mut va = [0i32; 8];
-        _mm256_storeu_si256(va[..].as_mut_ptr() as *mut _, v1);
+        unsafe { _mm256_storeu_si256(va[..].as_mut_ptr() as *mut _, v1) };
         let mut v = va[0] + va[1] + va[2] + va[3] + va[4] + va[5] + va[6] + va[7];
         for i in 0..fs.len() {
             v += ss[i] as i32 * fs[i] as i32;

@@ -7,8 +7,8 @@
 
 use core::f64;
 
-use super::data::{SPLINE6581_F0, SPLINE8580_F0};
 use super::ChipModel;
+use super::data::{SPLINE6581_F0, SPLINE8580_F0};
 
 /// Common interface for SID filter implementations.
 ///

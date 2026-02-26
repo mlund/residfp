@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 #[cfg(not(feature = "std"))]
 use libm::F64Ext;
 
-use super::{SamplingMethod, FIR_RES_FAST, FIR_RES_INTERPOLATE, FIR_SHIFT};
+use super::{FIR_RES_FAST, FIR_RES_INTERPOLATE, FIR_SHIFT, SamplingMethod};
 
 /// Default passband limit for resampling (Hz)
 pub const DEFAULT_PASS_FREQ: f64 = 20000.0;

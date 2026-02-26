@@ -1,8 +1,8 @@
 mod data;
 
-#[cfg(all(feature = "alloc", feature = "std"))]
-use residfp::{clock, SamplingMethod, SidConfig};
 use residfp::{ChipModel, Sid};
+#[cfg(all(feature = "alloc", feature = "std"))]
+use residfp::{SamplingMethod, SidConfig, clock};
 
 #[rustfmt::skip]
 static SID_DATA: [u16; 51] = [
