@@ -3,6 +3,7 @@
 // Verify soft clipping behavior for 16-bit saturation.
 
 use residfp::sampler::soft_clip;
+use residfp::{ChipModel, SamplingMethod, Sid};
 
 /// Soft clipping threshold - values below pass unchanged.
 const THRESHOLD: i32 = 28000;
@@ -123,4 +124,57 @@ fn soft_clip_symmetry() {
             neg
         );
     }
+}
+
+/// `SamplingMethod::None` emits one output per SID cycle (raw 1 MHz feed).
+#[test]
+fn passthrough_one_sample_per_cycle() {
+    let mut sid = Sid::new(ChipModel::Mos6581);
+    sid.set_sampling_parameters(SamplingMethod::None, 1_000_000, 1_000_000)
+        .unwrap();
+    let mut buf = [0i16; 256];
+    let (written, remaining) = sid.sample(256, &mut buf, 1);
+    assert_eq!(written, 256);
+    assert_eq!(remaining, 0);
+}
+
+/// `SamplingMethod::None` matches stepping the SID one cycle at a time.
+#[test]
+fn passthrough_matches_manual_clocking() {
+    let mut reference = Sid::new(ChipModel::Mos6581);
+    reference.write(0x05, 0x09); // attack/decay
+    reference.write(0x18, 0x0f); // volume
+    reference.write(0x01, 25); // freq hi
+    reference.write(0x00, 177); // freq lo
+    reference.write(0x04, 0x21); // sawtooth + gate
+    let mut expected = [0i16; 128];
+    for slot in expected.iter_mut() {
+        reference.clock();
+        *slot = reference.output();
+    }
+
+    let mut sid = Sid::new(ChipModel::Mos6581);
+    sid.write(0x05, 0x09);
+    sid.write(0x18, 0x0f);
+    sid.write(0x01, 25);
+    sid.write(0x00, 177);
+    sid.write(0x04, 0x21);
+    sid.set_sampling_parameters(SamplingMethod::None, 1_000_000, 1_000_000)
+        .unwrap();
+    let mut got = [0i16; 128];
+    let (written, _) = sid.sample(128, &mut got, 1);
+    assert_eq!(written, 128);
+    assert_eq!(got, expected);
+}
+
+/// Buffer smaller than `delta` returns leftover cycles for the next call.
+#[test]
+fn passthrough_leftover_cycles() {
+    let mut sid = Sid::new(ChipModel::Mos6581);
+    sid.set_sampling_parameters(SamplingMethod::None, 1_000_000, 1_000_000)
+        .unwrap();
+    let mut buf = [0i16; 64];
+    let (written, remaining) = sid.sample(100, &mut buf, 1);
+    assert_eq!(written, 64);
+    assert_eq!(remaining, 36);
 }

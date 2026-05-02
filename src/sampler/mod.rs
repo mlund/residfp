@@ -48,6 +48,9 @@ const FIXP_MASK: i32 = 0xffff;
 /// Methods requiring heap allocation are gated behind the `alloc` feature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum SamplingMethod {
+    /// Pass-through: one output sample per SID cycle (~1 MHz raw).
+    /// Sample rate parameter is ignored. Mirrors libresidfp's `NONE`.
+    None,
     /// Simple decimation - fastest but lowest quality.
     #[default]
     Fast,
@@ -180,6 +183,7 @@ impl Sampler {
     /// Clock the sampler for `delta` SID cycles, writing interleaved audio samples.
     pub fn clock(&mut self, delta: u32, buffer: &mut [i16], interleave: usize) -> (usize, u32) {
         match self.sampling_method {
+            SamplingMethod::None => self.clock_none(delta, buffer, interleave),
             SamplingMethod::Fast => self.clock_fast(delta, buffer, interleave),
             SamplingMethod::Interpolate => self.clock_interpolate(delta, buffer, interleave),
             #[cfg(feature = "alloc")]
@@ -191,6 +195,23 @@ impl Sampler {
                 self.clock_resample_two_pass(delta, buffer, interleave)
             }
         }
+    }
+
+    /// Pass-through: emit one sample per SID cycle, no resampling.
+    ///
+    /// Mirrors libresidfp's `PassThrough` resampler. Useful when the caller
+    /// wants raw ~1 MHz output for downstream resampling.
+    #[inline]
+    fn clock_none(&mut self, delta: u32, buffer: &mut [i16], interleave: usize) -> (usize, u32) {
+        let mut index = 0;
+        let mut remaining = delta;
+        while remaining > 0 && index < buffer.len() {
+            self.synth.clock();
+            buffer[index * interleave] = self.synth.output();
+            index += 1;
+            remaining -= 1;
+        }
+        (index, remaining)
     }
 
     /// SID clocking with audio sampling - delta clocking picking nearest sample.
