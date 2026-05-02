@@ -318,12 +318,12 @@ fn filter_curve_affects_output() {
         buffer
     }
 
-    let bright = sample_with_curve(0.0);
+    let dark = sample_with_curve(0.0);
     let neutral = sample_with_curve(0.5);
-    let dark = sample_with_curve(1.0);
+    let bright = sample_with_curve(1.0);
 
     // Outputs should differ when curve changes
-    assert_ne!(bright, neutral, "Bright and neutral should differ");
-    assert_ne!(neutral, dark, "Neutral and dark should differ");
-    assert_ne!(bright, dark, "Bright and dark should differ");
+    assert_ne!(dark, neutral, "Dark and neutral should differ");
+    assert_ne!(neutral, bright, "Neutral and bright should differ");
+    assert_ne!(dark, bright, "Dark and bright should differ");
 }

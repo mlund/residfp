@@ -272,7 +272,7 @@ impl Sid {
 
     /// Set filter curve parameter for tuning to match specific SID chips.
     ///
-    /// Range: 0.0 (bright/high frequencies) to 1.0 (dark/low frequencies)
+    /// Range: 0.0 (dark/low frequencies) to 1.0 (bright/high frequencies)
     /// Default: 0.5
     pub fn set_filter_curve(&mut self, curve: f64) {
         self.sampler.synth.filter_impl.set_filter_curve(curve);

@@ -190,7 +190,7 @@ impl FilterModelConfig {
     /// Creates config with specified filter curve.
     ///
     /// # Arguments
-    /// * `curve` - 0.0 (bright/high freq) to 1.0 (dark/low freq). Affects DAC zero.
+    /// * `curve` - 0.0 (dark/low freq) to 1.0 (bright/high freq). Affects DAC zero.
     ///
     /// Note: uCox defaults to 20e-6. Use `set_filter_range()` to adjust it.
     pub fn with_curve(curve: f64) -> Self {
@@ -208,8 +208,9 @@ impl FilterModelConfig {
         // Can be adjusted 1e-6..40e-6 via set_filter_range()
         let u_cox = 20e-6;
 
-        // DAC parameters - dac_zero varies with curve (C++ formula)
-        let dac_zero = 6.65 + (1.0 - curve);
+        // DAC parameters - dac_zero varies with curve (C++ formula).
+        // Reworked upstream: 0=dark, 1=bright, 3x the range; default 0.5 unchanged.
+        let dac_zero = 6.65 + 3.0 * curve - 1.0;
         let dac_scale = 2.63;
 
         // Voltage range from op-amp data
