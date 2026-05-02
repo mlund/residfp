@@ -191,7 +191,7 @@ mod tests {
         // Run several solve steps
         let mut output = 0;
         for i in 0..100 {
-            let input = (i * 100) as i32;
+            let input = i * 100;
             output = integrator.solve(&config, input);
         }
 

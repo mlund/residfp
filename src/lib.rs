@@ -63,6 +63,8 @@ pub mod clock {
 
 pub use self::sampler::SamplingMethod;
 pub use self::sid::{Sid, State};
+// Re-exported because `sampler::Sampler::new` takes a `Synth`.
+pub use self::synth::Synth;
 
 /// Error returned when sampling parameters are invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

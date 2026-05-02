@@ -4,7 +4,7 @@ use residfp::ChipModel;
 use residfp::wave::WaveformGenerator;
 
 fn setup(wave: &mut WaveformGenerator, waveform: u8, freq: u16, pw: u16) {
-    wave.set_control((waveform & 0x0f) << 4 | 0x00);
+    wave.set_control((waveform & 0x0f) << 4);
     wave.set_frequency_hi((freq >> 8) as u8);
     wave.set_frequency_lo((freq & 0xff) as u8);
     wave.set_pulse_width_hi((pw >> 8) as u8);

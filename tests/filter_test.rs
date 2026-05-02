@@ -14,7 +14,7 @@ fn dump(sid: &mut Sid, _name: &str, samples: usize) -> Vec<i16> {
 fn setup(sid: &mut Sid, voice: u8, waveform: u8, freq: u16, pw: u16, vol: u8) {
     let offset = voice * 7;
     let control = (waveform << 4) | 1;
-    sid.write(offset + 0x00, (freq & 0x00ff) as u8); // FREQ_LO
+    sid.write(offset, (freq & 0x00ff) as u8); // FREQ_LO
     sid.write(offset + 0x01, (freq >> 8) as u8); // FREQ_HI
     sid.write(offset + 0x02, (pw & 0x00ff) as u8); // PW_LO
     sid.write(offset + 0x03, (pw >> 8) as u8); // PW_HI

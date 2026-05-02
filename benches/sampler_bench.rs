@@ -1,7 +1,6 @@
 use criterion::Criterion;
-use residfp::ChipModel;
 use residfp::sampler::Sampler;
-use residfp::synth::Synth;
+use residfp::{ChipModel, Synth};
 
 pub fn bench_compute_convolution_fir(c: &mut Criterion) {
     c.bench_function("convolution_fir", |b| {

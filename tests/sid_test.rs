@@ -28,7 +28,7 @@ fn generate_sid_output() -> Vec<i16> {
     let mut outputs = Vec::new();
     let mut i = 0;
     while i < SID_DATA.len() {
-        sid.write(0x01, SID_DATA[i + 0] as u8); // FREQHI1
+        sid.write(0x01, SID_DATA[i] as u8); // FREQHI1
         sid.write(0x00, SID_DATA[i + 1] as u8); // FREQLO1
         sid.write(0x00, 0x21); // CR1
         for _ in 0..SID_DATA[i + 2] {

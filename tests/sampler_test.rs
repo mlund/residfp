@@ -52,20 +52,22 @@ fn soft_clip_negative_compression() {
     }
 }
 
-/// Extreme values stay within i16 range.
+/// Extreme values clip near the i16 boundary with the correct sign.
 #[test]
 fn soft_clip_extremes() {
+    // i16 bounds are guaranteed by the return type; assert the meaningful
+    // invariant that extremes saturate near (not below) the soft-clip threshold.
     let max_clipped = soft_clip(i32::MAX);
     assert!(
-        max_clipped <= i16::MAX,
-        "i32::MAX should clip to <= i16::MAX, got {}",
+        max_clipped as i32 >= THRESHOLD,
+        "i32::MAX should saturate at >= threshold, got {}",
         max_clipped
     );
 
     let min_clipped = soft_clip(i32::MIN + 1);
     assert!(
-        min_clipped >= i16::MIN,
-        "i32::MIN+1 should clip to >= i16::MIN, got {}",
+        min_clipped as i32 <= -THRESHOLD,
+        "i32::MIN+1 should saturate at <= -threshold, got {}",
         min_clipped
     );
 }
