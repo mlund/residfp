@@ -160,8 +160,10 @@ mod tests {
         let spline = MonotoneSpline::new(&opamp_points());
 
         let mut prev_y = f64::MAX;
-        let mut x = 0.0;
-        while x < 12.0 {
+        // Integer-counted loop: 1200 steps of 0.01 cover [0.0, 12.0) without
+        // float accumulation drift.
+        for i in 0..1200 {
+            let x = i as f64 * 0.01;
             let (y, _) = spline.evaluate(x);
             assert!(
                 y <= prev_y,
@@ -171,7 +173,6 @@ mod tests {
                 prev_y
             );
             prev_y = y;
-            x += 0.01;
         }
     }
 
