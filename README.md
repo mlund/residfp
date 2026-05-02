@@ -1,10 +1,18 @@
 # residfp-rs
 
-### Overview
+A cycle-exact MOS 6581/8580 SID emulator in Rust. Faithful replication
+with good realtime performance, not aimed at exposing chip internal state
+or adding effects.
 
-This is a fork of `resid-rs` a MOS6581/8580 SID emulator engine with accurate analog circuit modeling.
-This project injects the following improvements from the
-[`libresidfp`](https://github.com/libsidplayfp/libresidfp) project:
+### Lineage
+
+- **reSID** (C++) by Dag Lem — the original cycle-exact emulator.
+- **libresidfp** (C++) by Antti Lankila and Leandro Nini — added analog
+  filter modeling, DAC nonlinearity, and other accuracy improvements.
+- **resid-rs** (Rust) by Sebastian Jastrzebski — the Rust port.
+
+This fork backports [`libresidfp`](https://github.com/libsidplayfp/libresidfp)
+improvements not present in the original resid-rs:
 
 - **DAC nonlinearity model** - R-2R ladder with resistor mismatch and missing termination for 6581
  - **EKV filter model** - Physics-based MOS transistor model for accurate 6581 filter (feature: `ekv-filter`, ~400KB tables, higher CPU)
@@ -31,7 +39,7 @@ let mut sid = Sid::from_config(SidConfig {
 
 // Configure filter (optional)
 sid.set_filter_enabled(true);
-sid.set_filter_curve(0.5);  // 0.0 = bright, 1.0 = dark
+sid.set_filter_curve(0.5);  // 0.0 = dark, 1.0 = bright
 
 // Write to SID registers
 sid.write(0x00, 0x00);  // Voice 1 frequency low
@@ -72,10 +80,16 @@ while delta > 0 {
 - 1.1 - more idiomatic implementation, removes interior mutability and improves support for async rust
 - 1.2 - API ergonomics: `clock::PAL`/`NTSC` constants, `State` save/restore, standard trait derives
 
+## License
+
+GPLv3, matching the original resid-rs. Compatible with the GPLv2-or-later
+upstreams (reSID, libresidfp).
+
 ## Credits
 
-- Thanks to Dag Lem for his reSID implementation
-- Thanks to the libresidfp team for the floating-point filter models
-- Thanks to Daniel Collin for motivating me to put this out and helping out with code optimization
-- Commodore folks for building an iconic 8-bit machine
-- Rust developers for providing an incredible language to develop in
+- Dag Lem — original reSID C++ implementation
+- Antti Lankila — floating-point analog filter modeling in libresidfp
+- Leandro Nini — libresidfp maintainer
+- Sebastian Jastrzebski — original resid-rs Rust port
+- Daniel Collin — code optimization help on early resid-rs
+- Commodore for the C64; the Rust community for the language
